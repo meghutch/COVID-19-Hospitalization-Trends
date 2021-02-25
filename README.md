@@ -2,7 +2,7 @@
 
 **This repository contains the  code used to analyze United States National and Regional COVID-19 hospitalization trends in both children and adult populations.**
 
-**[Completed Analysis](https://htmlpreview.github.io/?https://github.com/meghutch/COVID-19-Hospitalization-Trends/blob/main/Hospitalization_Trends.html)**
+**[View Completed Analysis, Stats, and Figures](https://meghutch.github.io/Hospitalization_Trends.html)**
 
 ## About the Data
 
