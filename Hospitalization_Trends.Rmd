@@ -314,14 +314,13 @@ nrow(hhs_data_proc %>% filter(previous_day_admission_pediatric_covid_confirmed_7
 
 ```{r}
 national_stats <- hhs_data_proc %>% 
-  distinct(population, Region, hospitalizations_standardized_us) %>%
-  group_by(population, Region) %>%
+  distinct(population, hospitalizations_standardized_us) %>%
+  group_by(population) %>%
   mutate(Q1 = round(quantile(hospitalizations_standardized_us, 0.25), 1),
          Median = round(median(hospitalizations_standardized_us), 1),
          Q3 = round(quantile(hospitalizations_standardized_us, 0.75), 1)) %>%
   select(-hospitalizations_standardized_us) %>%
   distinct() %>%
-  arrange(Region) %>%
   ungroup() %>%
   as.data.frame()
 
