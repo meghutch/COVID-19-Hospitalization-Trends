@@ -26,7 +26,7 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 ```hhs_data <- read_csv('data/new_file_name_here.csv)```
 
-### References
+## References
 
 1. COVID-19 Reported Patient Impact and Hospital Capacity by Facility. HealthData Web site. Updated February 21, 2021. Accessed February 22, 2021. https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility
 
