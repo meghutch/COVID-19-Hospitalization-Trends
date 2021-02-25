@@ -1,0 +1,506 @@
+---
+title: "COVID-19 Hospitalization Trends"
+author: "Meghan Hutch,  Paul Avillach, Yuan Luo, Florence Bourgeois"
+date: "2/24/2021"
+output: html_document
+---
+
+**This analysis compares the United States National and Regional trends of child and adult COVID-19 hospitalizations.**
+
+Data was acquired through the [United States Department of Health and Human Services (HHS)](https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility)
+
+A complete [Data Dictionary](https://healthdata.gov/covid-19-reported-patient-impact-and-hospital-capacity-facility-data-dictionary) has been provided by the HHS in addition to a [Helpful FAQ Resource](https://github.com/CareSet/COVID_Hospital_PUF?src=hd)
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(formattable)
+library(data.table)
+library(DT)
+```
+
+## Data Import
+
+**Import HHS Hospitalization Counts and Census Data**
+
+```{r message=FALSE, warning=FALSE}
+hhs_data <- read_csv('data/reported_hospital_capacity_admissions_facility_level_weekly_average_timeseries_20210221.csv')
+
+census_data <- read.csv('data/sc-est2020-18+pop-res.csv')
+
+state_abv <- read.delim2('data/state_abv.txt', sep = "|")
+```
+
+### Data Pre-Processing
+
+**Add full state names to HHS Data**
+
+```{r}
+state_abv <- state_abv %>% 
+  mutate(State = tolower(STATE_NAME)) %>%
+  rename("state_abv" = STUSAB) %>%
+  select(state_abv, State)
+
+hhs_data <- hhs_data %>%
+  rename("state_abv" = state) %>%
+  left_join(., state_abv, by = "state_abv")
+```
+
+**Remove US.Territories**
+
+```{r}
+hhs_data <- hhs_data %>%
+  filter(!state_abv %in% c("GU", "MP", "PR", "VI"))
+```
+
+**Clean US Census Data**
+
+Calculate new variable ```POPEST17uNDER2020``` for estimated population size of ages $\leq$ 17.
+
+```{r}
+census_data <- census_data %>% 
+  mutate(NAME = tolower(NAME)) %>%
+  rename('State' = NAME) %>% 
+  mutate(POPEST17Under2020 = POPESTIMATE2020 - POPEST18PLUS2020) %>%
+  rename('Region' = 'REGION')
+```
+
+Recode Regions according to the [U.S Census](https://www.census.gov/geographies/reference-maps/2010/geo/2010-census-regions-and-divisions-of-the-united-states.html)
+
+```{r}
+census_data$Region <- recode(census_data$Region, 
+                             '0' = 'US', 
+                             '1' = 'Northeast', 
+                             '2' = 'Midwest', 
+                             '3' = 'South', 
+                             '4' = 'West')
+```
+
+**Add Census data to HHS data**
+
+```{r}
+hhs_data <- left_join(hhs_data, census_data, by = 'State')
+```
+
+Cells with -999999 indicate obfuscated counts or averages between 1-3. For our analyses, we will consider obfuscated values as 2.
+
+```{r}
+hhs_data[hhs_data == -999999] <- 2
+```
+
+
+**Convert collection_week to date format**
+
+
+An important note about data collection according to HealthData.gov:
+
+"For a given entry, the term ```collection_week``` signifies the start of the period that is aggregated. For example, a “collection_week” of 2020-11-20 means the average/sum/coverage of the elements captured from that given facility starting and including Friday, November 20, 2020, and ending and including reports for Thursday, November 26, 2020.
+
+```{r}
+hhs_data$collection_week <- as.Date(hhs_data$collection_week)
+```
+
+## Pediatric Hospitalization Selection
+
+Here we isolate all pediatric COVID-19 variables in order to identify which hospitals report pediatric data.
+
+```{r}
+pediatric_data <- hhs_data %>% 
+  select(collection_week, hospital_pk, hospital_name, state_abv, Region,
+         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_coverage,
+         total_pediatric_patients_hospitalized_confirmed_covid_7_day_coverage,
+         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg,
+         total_pediatric_patients_hospitalized_confirmed_covid_7_day_avg,
+         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_sum,
+         total_pediatric_patients_hospitalized_confirmed_covid_7_day_sum,
+         previous_day_admission_pediatric_covid_confirmed_7_day_sum,
+         previous_day_admission_pediatric_covid_suspected_7_day_sum)
+```
+
+Our primary variable of interest will be the ```previous_day_admission_pediatric_covid_confirmed_7_day_sum```. This will be used to identify the number of hospitals who admitted patients with a laboratory confirmed COVID-19 test on admission. 
+
+As defined by the HHS, this variable captures: 
+
+```
+"Sum of number of pediatric patients who were admitted to an inpatient bed, including NICU, PICU, newborn, and nursery, on the previous calendar day who had confirmed COVID-19 at the time of admission."
+
+```
+In rare cases, if the previous_day_admission column is a negative number, we will replace with a 0
+
+```{r}
+pediatric_data <- pediatric_data %>%
+  mutate(previous_day_admission_pediatric_covid_confirmed_7_day_sum = if_else(previous_day_admission_pediatric_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_pediatric_covid_confirmed_7_day_sum))
+```
+
+
+We will then create a variable ```pediatric_count``` where we record the maximum count recorded in any pediatric column. Additionally, we will identify the ```overall_pediatric_count```, a metric that can used to identify the highest count of pediatric patients at anytime. This will help us filter for hospitals that appear to be reporting pediatric cases during any collection week.
+
+```{r}
+pediatric_data <- pediatric_data %>% 
+  mutate(pediatric_count = do.call(pmax, c(select(., total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg:previous_day_admission_pediatric_covid_suspected_7_day_sum), na.rm = TRUE))) %>% 
+  group_by(hospital_pk, hospital_name) %>%
+  mutate(overall_pediatric_count = max(pediatric_count)) %>% 
+  ungroup()
+```
+
+Select hospitals that at some point had a pediatric count > 0. These hospitals will be be considered our pediatric hospital cohort
+
+```{r}
+pediatric_data <- pediatric_data %>% 
+  filter(overall_pediatric_count > 0)
+```
+
+## Adult Hospitalization Selection
+
+We will perform a similar process to identify our adult hospital cohort. These will be the  hospitals which document at least one adult COVID-19 count.
+
+```{r}
+adult_data <- hhs_data %>% 
+  select(hospital_pk, collection_week, hospital_name, Region,
+         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_coverage,
+         total_adult_patients_hospitalized_confirmed_covid_7_day_coverage,
+         staffed_icu_adult_patients_confirmed_and_suspected_covid_7_day_coverage,
+         staffed_icu_adult_patients_confirmed_covid_7_day_coverage,
+         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg,
+         total_adult_patients_hospitalized_confirmed_covid_7_day_avg,
+         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_sum,
+         total_adult_patients_hospitalized_confirmed_covid_7_day_sum,
+         staffed_icu_adult_patients_confirmed_and_suspected_covid_7_day_sum,
+         staffed_icu_adult_patients_confirmed_covid_7_day_sum,
+         previous_day_admission_adult_covid_confirmed_7_day_sum,
+         `previous_day_admission_adult_covid_confirmed_18-19_7_day_sum`,
+         `previous_day_admission_adult_covid_confirmed_20-29_7_day_sum`,
+         `previous_day_admission_adult_covid_confirmed_30-39_7_day_sum`, 
+         `previous_day_admission_adult_covid_confirmed_40-49_7_day_sum`,
+         `previous_day_admission_adult_covid_confirmed_50-59_7_day_sum`,
+         `previous_day_admission_adult_covid_confirmed_60-69_7_day_sum`,
+         `previous_day_admission_adult_covid_confirmed_70-79_7_day_sum`, 
+         `previous_day_admission_adult_covid_confirmed_80+_7_day_sum`,
+         `previous_day_admission_adult_covid_confirmed_unknown_7_day_sum`,
+         `previous_day_admission_adult_covid_suspected_7_day_sum`,
+         `previous_day_admission_adult_covid_suspected_18-19_7_day_sum`,
+         `previous_day_admission_adult_covid_suspected_20-29_7_day_sum`, 
+         `previous_day_admission_adult_covid_suspected_30-39_7_day_sum`,
+         `previous_day_admission_adult_covid_suspected_40-49_7_day_sum`, 
+         `previous_day_admission_adult_covid_suspected_50-59_7_day_sum`, 
+         `previous_day_admission_adult_covid_suspected_60-69_7_day_sum`,
+         `previous_day_admission_adult_covid_suspected_70-79_7_day_sum`, 
+         `previous_day_admission_adult_covid_suspected_80+_7_day_sum`,
+         `previous_day_admission_adult_covid_suspected_unknown_7_day_sum`)
+```
+
+In rare cases, if the previous_day_admission column is a negative number, we will replace with a 0
+
+```{r}
+adult_data <- adult_data %>%
+  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = if_else(previous_day_admission_adult_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_adult_covid_confirmed_7_day_sum))
+```
+
+
+We will then create a variable ```adult_count``` where we record the maximum count recorded in any adult column. Additionally, we will identify the ```overall_adult_count```, a metric that can used to identify the highest count of adult patients during any collection week. This will help us filter for hospitals that appear to be reporting adult cases at some point 
+
+```{r}
+adult_data <- adult_data %>% 
+  mutate(adult_count = do.call(pmax, c(select(., total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg:previous_day_admission_adult_covid_suspected_7_day_sum), na.rm = TRUE))) %>% 
+  group_by(hospital_pk, hospital_name) %>%
+  mutate(overall_adult_count = max(adult_count)) %>% 
+  ungroup()
+```
+
+Select hospitals that at some point had an adult count > 0. These hospitals will be be considered our adult hospital cohort
+
+```{r}
+adult_data <- adult_data %>% 
+  filter(overall_adult_count > 0)
+```
+
+## Subset HHS Data with Selected Hospitals
+
+```{r}
+pediatric_hosp <- pediatric_data %>%
+  ungroup() %>% 
+  distinct(hospital_pk) %>%
+  mutate(population = "pediatric")
+
+adult_hosp <- adult_data %>%
+  ungroup() %>% 
+  distinct(hospital_pk) %>%
+  mutate(population = "adult")
+
+hhs_pediatric_processed <- merge(hhs_data, pediatric_hosp, by = "hospital_pk")
+hhs_adult_processed <- merge(hhs_data, adult_hosp, by = "hospital_pk")
+```
+
+**We will also standardize hospitalizations based on U.S Census population estimates**
+
+```{r}
+hhs_pediatric_processed <- hhs_pediatric_processed %>%
+  group_by(collection_week) %>%
+  mutate(hospitalizations = sum(previous_day_admission_pediatric_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(collection_week, Region) %>%
+  mutate(hospitalizations_region = sum(previous_day_admission_pediatric_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
+  ungroup()
+
+hhs_adult_processed <- hhs_adult_processed %>%
+  group_by(collection_week) %>%
+  mutate(hospitalizations = sum(previous_day_admission_adult_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(collection_week, Region) %>%
+  mutate(hospitalizations_region = sum(previous_day_admission_adult_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
+  ungroup()
+```
+
+**Combine adult and pediatric hospitalizations**
+
+```{r}
+hhs_data_proc <- rbind(hhs_pediatric_processed, hhs_adult_processed)
+```
+
+## Standardize Hospitalization Rates
+
+Here we will standardize hospitalizations per 100,000 adults/children throughout the Nation and by Region
+
+```{r}
+pop_adult_nation <- census_data %>% 
+  filter(State == "united states") %>% 
+  select(POPEST18PLUS2020) %>% 
+  as.numeric()
+
+pop_pediatric_nation <- census_data %>% 
+  filter(State == "united states") %>% 
+  select(POPEST17Under2020) %>% 
+  as.numeric()
+
+region_estimates <- hhs_data_proc %>% 
+  ungroup() %>%
+  distinct(Region, POPEST17Under2020, POPEST18PLUS2020) %>%
+  group_by(Region) %>%
+  mutate(Region_census_pediatric = sum(POPEST17Under2020),
+         Region_census_adult = sum(POPEST18PLUS2020)) %>%
+  select(Region, Region_census_pediatric, Region_census_adult) %>%
+  distinct()
+
+
+hhs_data_proc <- hhs_data_proc %>%
+  left_join(., region_estimates, by = "Region") %>%
+  mutate(hospitalizations_standardized_us = if_else(population == "pediatric", 
+                                                    hospitalizations/pop_pediatric_nation*100000,
+         hospitalizations/pop_adult_nation*100000)) %>%
+  group_by(collection_week, population, Region) %>%
+  mutate(hospitalizations_standardized_region = if_else(population == "pediatric", 
+                                                    hospitalizations_region/Region_census_pediatric*100000,
+         hospitalizations_region/Region_census_adult*100000)) %>%
+  ungroup()
+```
+
+## Statistics
+
+**Total Number of Hospitals that Reported either Pediatric or Adult COVID-19 Hospitalization information in at least one column**
+
+```{r}
+nrow(hhs_data_proc %>% distinct(hospital_pk, hospital_name))
+```
+
+**Total Number of Hospitals that Reported > 0 Pediatric or Adult COVID-19 Hospitalizations during at least one collection week**
+
+```{r}
+nrow(hhs_data_proc %>% filter(previous_day_admission_pediatric_covid_confirmed_7_day_sum > 0 |
+                                previous_day_admission_adult_covid_confirmed_7_day_sum > 0) %>%
+       distinct(hospital_pk, hospital_name))
+```
+
+**National Median Hospitalization Rate per 100,000 Children/Adults**
+
+```{r}
+national_stats <- hhs_data_proc %>% 
+  distinct(population, Region, hospitalizations_standardized_us) %>%
+  group_by(population, Region) %>%
+  mutate(Q1 = round(quantile(hospitalizations_standardized_us, 0.25), 1),
+         Median = round(median(hospitalizations_standardized_us), 1),
+         Q3 = round(quantile(hospitalizations_standardized_us, 0.75), 1)) %>%
+  select(-hospitalizations_standardized_us) %>%
+  distinct() %>%
+  arrange(Region) %>%
+  ungroup() %>%
+  as.data.frame()
+
+datatable(national_stats)
+```
+
+**Regional Median Hospitalization Rates per 100,000 Children/Adults**
+
+```{r}
+regional_stats <- hhs_data_proc %>% 
+  distinct(population, Region, hospitalizations_standardized_region) %>%
+  group_by(population, Region) %>%
+  mutate(Q1 = round(quantile(hospitalizations_standardized_region, 0.25), 1),
+         Median = round(median(hospitalizations_standardized_region), 1),
+         Q3 = round(quantile(hospitalizations_standardized_region, 0.75), 1)) %>%
+  select(-hospitalizations_standardized_region) %>%
+  distinct() %>%
+  arrange(Region) %>%
+  ungroup() %>%
+  as.data.frame()
+
+datatable(regional_stats)
+```
+
+
+## National Hospitalization Trends
+
+```{r}
+ggplot(hhs_data_proc %>% 
+         mutate(hospitalizations_standardized_us = if_else(population == "pediatric", hospitalizations_standardized_us*10, hospitalizations_standardized_us)) %>% 
+       distinct(collection_week, hospitalizations_standardized_us, population),
+       aes(x = collection_week, y = hospitalizations_standardized_us, color = population)) + 
+  geom_line() + 
+  geom_point() + 
+  scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
+  ylab("Hospitalizations per 100K Adults") + 
+  xlab("") + 
+  scale_x_date(date_labels = "%b-%d", date_breaks = "1 month") + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalizations per 100K Children")) + 
+  theme_bw() + 
+  theme(plot.title = element_text(""),
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size=15),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        axis.text.x = element_text(face = "bold", size = 10),
+        axis.title.y = element_text(face = "bold", size = 13, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 13, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 13, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02'))
+```
+
+### National Hospitalizations Rates
+
+Rates are expressed as per 100,000 adults or children
+
+```{r}
+nat_table <- hhs_data_proc %>% 
+  distinct(collection_week, hospitalizations_standardized_us, population) %>% 
+  mutate(hospitalizations_standardized_us = round(hospitalizations_standardized_us, 1)) %>%
+  arrange(collection_week) %>%
+  pivot_wider(names_from = population, values_from = hospitalizations_standardized_us) %>%
+  rename("Week" = collection_week, 
+         `Child Hospitalizations` = pediatric, 
+         `Adult Hospitalizations` = adult)
+
+lowValue = "#ffffff"
+customOrange = "#D95F02"
+customGreen = "#1B9E77"
+
+as.datatable(
+  formattable(nat_table, align = c('c', 'c','c'),  list(
+            `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
+            `Child Hospitalizations`= color_tile(lowValue, customOrange),
+            `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
+  )
+```
+
+## Regional Hospitalization Trends
+
+```{r}
+ggplot(hhs_data_proc %>%
+         mutate(hospitalizations_standardized_region = if_else(population == "pediatric", 
+                                                 hospitalizations_standardized_region*10, hospitalizations_standardized_region)) %>%
+         distinct(collection_week, Region, population, hospitalizations_standardized_region),
+       aes(x = collection_week, y = hospitalizations_standardized_region, color = population)) + 
+  geom_point() + 
+  geom_line(alpha=0.9) + 
+  scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
+  ylab("Hospitalizations per 100k Adults") + 
+  xlab("") + 
+  scale_x_date(date_labels = "%b", date_breaks = "1 month") + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalations per 100k Children")) + 
+  theme_bw() +
+  theme(plot.title = element_text(""),
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size=15),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        axis.text.x = element_text(face = "bold", size = 10),
+        axis.title.y = element_text(face = "bold", size = 13, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 13, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 13, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02')) + 
+  facet_wrap(~Region, scales = "fixed") + 
+  theme(strip.text.x = element_text(size = 18))
+```
+
+### Hospitalizations Rates by Region
+
+Rates are expressed as per 100,000 adults or children
+
+```{r}
+lowValue = "#ffffff"
+customOrange = "#D95F02"
+customGreen = "#1B9E77"
+
+reg_table <- hhs_data_proc %>% 
+  distinct(collection_week, Region, hospitalizations_standardized_region, population) %>% 
+  mutate(hospitalizations_standardized_region = round(hospitalizations_standardized_region, 1)) %>%
+  arrange(collection_week) %>%
+  pivot_wider(names_from = population, values_from = hospitalizations_standardized_region) %>%
+  rename("Week" = collection_week, 
+         `Child Hospitalizations` = pediatric, 
+         `Adult Hospitalizations` = adult)
+```
+
+
+### **Midwest**
+
+```{r}
+as.datatable(
+  formattable(reg_table %>% filter(Region == "Midwest") %>% select(-Region), align = c('c', 'c','c'),  list(
+            `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
+            `Child Hospitalizations`= color_tile(lowValue, customOrange),
+            `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
+  )
+```
+
+### **Northeast**
+
+```{r}
+as.datatable(
+  formattable(reg_table %>% filter(Region == "Northeast") %>% select(-Region), align = c('c', 'c','c'),  list(
+            `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
+            `Child Hospitalizations`= color_tile(lowValue, customOrange),
+            `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
+  )
+```
+
+### **South**
+
+```{r}
+as.datatable(
+  formattable(reg_table %>% filter(Region == "South") %>% select(-Region), align = c('c', 'c','c'),  list(
+            `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
+            `Child Hospitalizations`= color_tile(lowValue, customOrange),
+            `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
+  )
+```
+
+### **West**
+
+```{r}
+as.datatable(
+  formattable(reg_table %>% filter(Region == "West") %>% select(-Region), align = c('c', 'c','c'),  list(
+            `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
+            `Child Hospitalizations`= color_tile(lowValue, customOrange),
+            `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
+  )
+```
+
+
+
+
+
+
+
+
+
+
+
