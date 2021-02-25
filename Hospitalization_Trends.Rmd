@@ -19,7 +19,7 @@ library(data.table)
 library(DT)
 ```
 
-## Data Import
+## **Data Import**
 
 **Import HHS Hospitalization Counts and Census Data**
 
@@ -31,7 +31,7 @@ census_data <- read.csv('data/sc-est2020-18+pop-res.csv')
 state_abv <- read.delim2('data/state_abv.txt', sep = "|")
 ```
 
-### Data Pre-Processing
+### **Data Pre-Processing**
 
 **Add full state names to HHS Data**
 
@@ -100,135 +100,50 @@ An important note about data collection according to HealthData.gov:
 hhs_data$collection_week <- as.Date(hhs_data$collection_week)
 ```
 
-## Pediatric Hospitalization Selection
-
-Here we isolate all pediatric COVID-19 variables in order to identify which hospitals report pediatric data.
-
-```{r}
-pediatric_data <- hhs_data %>% 
-  select(collection_week, hospital_pk, hospital_name, state_abv, Region,
-         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_coverage,
-         total_pediatric_patients_hospitalized_confirmed_covid_7_day_coverage,
-         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg,
-         total_pediatric_patients_hospitalized_confirmed_covid_7_day_avg,
-         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_sum,
-         total_pediatric_patients_hospitalized_confirmed_covid_7_day_sum,
-         previous_day_admission_pediatric_covid_confirmed_7_day_sum,
-         previous_day_admission_pediatric_covid_suspected_7_day_sum)
-```
 
 Our primary variable of interest will be the ```previous_day_admission_pediatric_covid_confirmed_7_day_sum```. This will be used to identify the number of hospitals who admitted patients with a laboratory confirmed COVID-19 test on admission. 
 
 As defined by the HHS, this variable captures: 
 
 ```
-"Sum of number of pediatric patients who were admitted to an inpatient bed, including NICU, PICU, newborn, and nursery, on the previous calendar day who had confirmed COVID-19 at the time of admission."
+"Sum of number of pediatric or patients who were admitted to an inpatient bed, including NICU, PICU, newborn, and nursery, on the previous calendar day who had confirmed COVID-19 at the time of admission."
 
 ```
-In rare cases, if the previous_day_admission column is a negative number, we will replace with a 0
+
+We will also use the equivalent adult column: ```previous_day_admission_pediatric_covid_confirmed_7_day_sum```
+
+**In rare cases, if the previous_day_admission column is a negative number, we will replace with a 0**
 
 ```{r}
-pediatric_data <- pediatric_data %>%
-  mutate(previous_day_admission_pediatric_covid_confirmed_7_day_sum = if_else(previous_day_admission_pediatric_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_pediatric_covid_confirmed_7_day_sum))
+hhs_data <- hhs_data %>%
+  mutate(previous_day_admission_pediatric_covid_confirmed_7_day_sum = if_else(previous_day_admission_pediatric_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_pediatric_covid_confirmed_7_day_sum),
+         previous_day_admission_adult_covid_confirmed_7_day_sum = if_else(previous_day_admission_adult_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_adult_covid_confirmed_7_day_sum))
 ```
 
-
-We will then create a variable ```pediatric_count``` where we record the maximum count recorded in any pediatric column. Additionally, we will identify the ```overall_pediatric_count```, a metric that can used to identify the highest count of pediatric patients at anytime. This will help us filter for hospitals that appear to be reporting pediatric cases during any collection week.
+**Select hospitals that at some point have a pediatric_count > 0 and select their unique hospital number** ```hospital_pk```
 
 ```{r}
-pediatric_data <- pediatric_data %>% 
-  mutate(pediatric_count = do.call(pmax, c(select(., total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg:previous_day_admission_pediatric_covid_suspected_7_day_sum), na.rm = TRUE))) %>% 
-  group_by(hospital_pk, hospital_name) %>%
-  mutate(overall_pediatric_count = max(pediatric_count)) %>% 
-  ungroup()
+pediatric_data <- hhs_data %>% 
+  filter(previous_day_admission_pediatric_covid_confirmed_7_day_sum > 0) %>% 
+  distinct(hospital_pk) %>%
+  mutate(population = "pediatric")
 ```
 
-Select hospitals that at some point had a pediatric count > 0. These hospitals will be be considered our pediatric hospital cohort
 
-```{r}
-pediatric_data <- pediatric_data %>% 
-  filter(overall_pediatric_count > 0)
-```
-
-## Adult Hospitalization Selection
-
-We will perform a similar process to identify our adult hospital cohort. These will be the  hospitals which document at least one adult COVID-19 count.
+**Select hospitals that at some point had an adult count > 0. These hospitals will be be considered our adult hospital cohort**
 
 ```{r}
 adult_data <- hhs_data %>% 
-  select(hospital_pk, collection_week, hospital_name, Region,
-         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_coverage,
-         total_adult_patients_hospitalized_confirmed_covid_7_day_coverage,
-         staffed_icu_adult_patients_confirmed_and_suspected_covid_7_day_coverage,
-         staffed_icu_adult_patients_confirmed_covid_7_day_coverage,
-         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg,
-         total_adult_patients_hospitalized_confirmed_covid_7_day_avg,
-         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_sum,
-         total_adult_patients_hospitalized_confirmed_covid_7_day_sum,
-         staffed_icu_adult_patients_confirmed_and_suspected_covid_7_day_sum,
-         staffed_icu_adult_patients_confirmed_covid_7_day_sum,
-         previous_day_admission_adult_covid_confirmed_7_day_sum,
-         `previous_day_admission_adult_covid_confirmed_18-19_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_20-29_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_30-39_7_day_sum`, 
-         `previous_day_admission_adult_covid_confirmed_40-49_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_50-59_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_60-69_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_70-79_7_day_sum`, 
-         `previous_day_admission_adult_covid_confirmed_80+_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_unknown_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_18-19_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_20-29_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_30-39_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_40-49_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_50-59_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_60-69_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_70-79_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_80+_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_unknown_7_day_sum`)
-```
-
-In rare cases, if the previous_day_admission column is a negative number, we will replace with a 0
-
-```{r}
-adult_data <- adult_data %>%
-  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = if_else(previous_day_admission_adult_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_adult_covid_confirmed_7_day_sum))
-```
-
-
-We will then create a variable ```adult_count``` where we record the maximum count recorded in any adult column. Additionally, we will identify the ```overall_adult_count```, a metric that can used to identify the highest count of adult patients during any collection week. This will help us filter for hospitals that appear to be reporting adult cases at some point 
-
-```{r}
-adult_data <- adult_data %>% 
-  mutate(adult_count = do.call(pmax, c(select(., total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg:previous_day_admission_adult_covid_suspected_7_day_sum), na.rm = TRUE))) %>% 
-  group_by(hospital_pk, hospital_name) %>%
-  mutate(overall_adult_count = max(adult_count)) %>% 
-  ungroup()
-```
-
-Select hospitals that at some point had an adult count > 0. These hospitals will be be considered our adult hospital cohort
-
-```{r}
-adult_data <- adult_data %>% 
-  filter(overall_adult_count > 0)
-```
-
-## Subset HHS Data with Selected Hospitals
-
-```{r}
-pediatric_hosp <- pediatric_data %>%
-  ungroup() %>% 
-  distinct(hospital_pk) %>%
-  mutate(population = "pediatric")
-
-adult_hosp <- adult_data %>%
-  ungroup() %>% 
+  filter(previous_day_admission_adult_covid_confirmed_7_day_sum > 0) %>% 
   distinct(hospital_pk) %>%
   mutate(population = "adult")
+```
 
-hhs_pediatric_processed <- merge(hhs_data, pediatric_hosp, by = "hospital_pk")
-hhs_adult_processed <- merge(hhs_data, adult_hosp, by = "hospital_pk")
+**Subset HHS Data with Selected Hospitals**
+
+```{r}
+hhs_pediatric_processed <- merge(hhs_data, pediatric_data, by = "hospital_pk")
+hhs_adult_processed <- merge(hhs_data, adult_data, by = "hospital_pk")
 ```
 
 **We will also standardize hospitalizations based on U.S Census population estimates**
@@ -257,7 +172,7 @@ hhs_adult_processed <- hhs_adult_processed %>%
 hhs_data_proc <- rbind(hhs_pediatric_processed, hhs_adult_processed)
 ```
 
-## Standardize Hospitalization Rates
+## **Standardize Hospitalization Rates**
 
 Here we will standardize hospitalizations per 100,000 adults/children throughout the Nation and by Region
 
@@ -294,13 +209,7 @@ hhs_data_proc <- hhs_data_proc %>%
   ungroup()
 ```
 
-## Statistics
-
-**Total Number of Hospitals that Reported either Pediatric or Adult COVID-19 Hospitalization information in at least one column**
-
-```{r}
-nrow(hhs_data_proc %>% distinct(hospital_pk, hospital_name))
-```
+## **Statistics**
 
 **Total Number of Hospitals that Reported > 0 Pediatric or Adult COVID-19 Hospitalizations during at least one collection week**
 
@@ -316,9 +225,9 @@ nrow(hhs_data_proc %>% filter(previous_day_admission_pediatric_covid_confirmed_7
 national_stats <- hhs_data_proc %>% 
   distinct(population, hospitalizations_standardized_us) %>%
   group_by(population) %>%
-  mutate(Q1 = round(quantile(hospitalizations_standardized_us, 0.25), 1),
-         Median = round(median(hospitalizations_standardized_us), 1),
-         Q3 = round(quantile(hospitalizations_standardized_us, 0.75), 1)) %>%
+  mutate(Q1 = round(quantile(hospitalizations_standardized_us, 0.25), 2),
+         Median = round(median(hospitalizations_standardized_us), 2),
+         Q3 = round(quantile(hospitalizations_standardized_us, 0.75), 2)) %>%
   select(-hospitalizations_standardized_us) %>%
   distinct() %>%
   ungroup() %>%
@@ -346,7 +255,7 @@ datatable(regional_stats)
 ```
 
 
-## National Hospitalization Trends
+## **National Hospitalization Trends**
 
 ```{r}
 ggplot(hhs_data_proc %>% 
@@ -373,14 +282,14 @@ ggplot(hhs_data_proc %>%
         axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02'))
 ```
 
-### National Hospitalizations Rates
+### **National Hospitalizations Rates**
 
 Rates are expressed as per 100,000 adults or children
 
 ```{r}
 nat_table <- hhs_data_proc %>% 
   distinct(collection_week, hospitalizations_standardized_us, population) %>% 
-  mutate(hospitalizations_standardized_us = round(hospitalizations_standardized_us, 1)) %>%
+  mutate(hospitalizations_standardized_us = round(hospitalizations_standardized_us, 2)) %>%
   arrange(collection_week) %>%
   pivot_wider(names_from = population, values_from = hospitalizations_standardized_us) %>%
   rename("Week" = collection_week, 
@@ -399,7 +308,7 @@ as.datatable(
   )
 ```
 
-## Regional Hospitalization Trends
+## **Regional Hospitalization Trends**
 
 ```{r}
 ggplot(hhs_data_proc %>%
@@ -429,7 +338,7 @@ ggplot(hhs_data_proc %>%
   theme(strip.text.x = element_text(size = 18))
 ```
 
-### Hospitalizations Rates by Region
+### **Hospitalizations Rates by Region**
 
 Rates are expressed as per 100,000 adults or children
 
@@ -440,7 +349,7 @@ customGreen = "#1B9E77"
 
 reg_table <- hhs_data_proc %>% 
   distinct(collection_week, Region, hospitalizations_standardized_region, population) %>% 
-  mutate(hospitalizations_standardized_region = round(hospitalizations_standardized_region, 1)) %>%
+  mutate(hospitalizations_standardized_region = round(hospitalizations_standardized_region, 2)) %>%
   arrange(collection_week) %>%
   pivot_wider(names_from = population, values_from = hospitalizations_standardized_region) %>%
   rename("Week" = collection_week, 
