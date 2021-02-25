@@ -1,7 +1,8 @@
 # COVID-19-Hospitalization-Trends
 
-**This repository contains code used to analyze United States National and Regional COVID-19 hospitalization trends in both children and adult populations.**
+**This repository contains the  code used to analyze United States National and Regional COVID-19 hospitalization trends in both children and adult populations.**
 
+**[Completed Analysis](https://htmlpreview.github.io/?https://github.com/meghutch/COVID-19-Hospitalization-Trends/blob/main/Hospitalization_Trends.html)**
 
 ## About the Data
 
@@ -20,6 +21,10 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 ```git clone https://github.com/meghutch/COVID-19-Hospitalization-Trends.git```
 
 **2. Run Hospitalizations_Trends.Rmd**
+
+**3. (Optional): Download latest data from the [(HHS)](https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility) and replace the new file name:**
+
+```hhs_data <- read_csv('data/new_file_name_here.csv)```
 
 ### References
 
