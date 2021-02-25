@@ -1,7 +1,8 @@
 # COVID-19-Hospitalization-Trends
 
-**This repository contains code used to analyze United States National and Regional COVID-19 hospitalization trends in both children and adult populations.**
+**This repository contains the  code used to analyze United States National and Regional COVID-19 hospitalization trends in both children and adult populations.**
 
+**[View Completed Analysis, Stats, and Figures](https://meghutch.github.io/Hospitalization_Trends.html)**
 
 ## About the Data
 
@@ -21,6 +22,10 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 **2. Run Hospitalizations_Trends.Rmd**
 
+**3. (Optional): Download latest data from the [(HHS)](https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility) and replace the new file name:**
+
+```hhs_data <- read_csv('data/new_file_name_here.csv)```
+
 ### References
 
 1. COVID-19 Reported Patient Impact and Hospital Capacity by Facility. HealthData Web site. Updated February 21, 2021. Accessed February 22, 2021. https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility
@@ -33,7 +38,7 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 5. SC-EST2020-18+POP-RES. U.S. Census Bureau, Population Division. 2020. Accessed February 9, 2020. https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/
 
-Contains information from COVID-19 Reported Patient Impact and Hospital Capacity by Facility which is made available under the [ODC Attribution License](https://opendatacommons.org/licenses/by/1-0/).
+**Contains information from COVID-19 Reported Patient Impact and Hospital Capacity by Facility which is made available under the [ODC Attribution License](https://opendatacommons.org/licenses/by/1-0/).**
 
 
 
