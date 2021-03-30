@@ -9,7 +9,7 @@ output: html_document
 
 Data was acquired through the [United States Department of Health and Human Services (HHS)](https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility)
 
-A complete [Data Dictionary](https://healthdata.gov/covid-19-reported-patient-impact-and-hospital-capacity-facility-data-dictionary) has been provided by the HHS in addition to a [Helpful FAQ Resource](https://github.com/CareSet/COVID_Hospital_PUF?src=hd)
+[Helpful FAQ Resource](https://github.com/CareSet/COVID_Hospital_PUF?src=hd)
 
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
