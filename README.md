@@ -36,7 +36,7 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 4. SC-EST2020-18+POP-RES. U.S. Census Bureau, Population Division. 2020. Accessed February 9, 2020. https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/
 
-Data is publically available under the **Public Domain U.S. Government** [license](https://www.usa.gov/government-works)[1]
+Data is publicly available under the **Public Domain U.S. Government** [license](https://www.usa.gov/government-works)[1]
 
 
 
