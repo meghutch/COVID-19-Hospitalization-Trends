@@ -7,7 +7,7 @@ output: html_document
 
 **This analysis compares the United States National and Regional trends of child and adult COVID-19 hospitalizations.**
 
-Data was acquired through the [United States Department of Health and Human Services (HHS)](https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility)
+Data was acquired through the [United States Department of Health and Human Services (HHS)](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh)
 
 [Helpful FAQ Resource](https://github.com/CareSet/COVID_Hospital_PUF?src=hd)
 
@@ -24,7 +24,7 @@ library(DT)
 **Import HHS Hospitalization Counts and Census Data**
 
 ```{r message=FALSE, warning=FALSE}
-hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_Facility_20210329.csv')
+hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State_Timeseries_20210325.csv')
 
 census_data <- read.csv('data/sc-est2020-18+pop-res.csv')
 
@@ -82,189 +82,112 @@ census_data$Region <- recode(census_data$Region,
 hhs_data <- left_join(hhs_data, census_data, by = 'State')
 ```
 
-Cells with -999999 indicate obfuscated counts or averages between 1-3. For our analyses, we will consider obfuscated values as 2.
+**Convert to date format**
 
 ```{r}
-hhs_data[hhs_data == -999999] <- 2
+hhs_data$date <- as.Date(hhs_data$date)
 ```
 
+**Remove dates with no data collection**
 
-**Convert collection_week to date format**
-
-
-An important note about data collection according to HealthData.gov:
-
-"For a given entry, the term ```collection_week``` signifies the start of the period that is aggregated. For example, a “collection_week” of 2020-11-20 means the average/sum/coverage of the elements captured from that given facility starting and including Friday, November 20, 2020, and ending and including reports for Thursday, November 26, 2020.
+We will remove dates when there was no```previous_day_admission_pediatric_covid_confirmed```cases reported for the whole week. Date collection appears to begin on July 15, 2020. However, previous structuring of the HHS had the data collection_week beginning on July 30 (see more note below). To stay consistent, we will remove data prior to July 30th
 
 ```{r}
-hhs_data$collection_week <- as.Date(hhs_data$collection_week)
+#View(hhs_data %>% select(date, previous_day_admission_pediatric_covid_confirmed) %>% group_by(date) %>% mutate(sum_date = sum(previous_day_admission_pediatric_covid_confirmed, na.rm = TRUE)) %>% distinct(date, sum_date))
+
+hhs_data <- hhs_data %>% filter(!date < '2020-07-31')
 ```
 
-**Pediatric Hospitalization Selection**
+**Sum by month**
 
-Here we isolate all pediatric COVID-19 variables in order to identify which hospitals report pediatric data.
+Similar to the original HHS data release, we will sum by month. As described by the original data dictionary:
 
-```{r}
-pediatric_data <- hhs_data %>% 
-  select(collection_week, hospital_pk, hospital_name, state_abv, Region,
-         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_coverage,
-         total_pediatric_patients_hospitalized_confirmed_covid_7_day_coverage,
-         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg,
-         total_pediatric_patients_hospitalized_confirmed_covid_7_day_avg,
-         total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_sum,
-         total_pediatric_patients_hospitalized_confirmed_covid_7_day_sum,
-         previous_day_admission_pediatric_covid_confirmed_7_day_sum,
-         previous_day_admission_pediatric_covid_suspected_7_day_sum)
+"For a given entry, the term ```collection_week``` signifies the start of the period that is aggregated. For example, a “collection_week” of 2020-11-20 means the average/sum/coverage of the elements captured from that given facility starting and including Friday, November 20, 2020, and ending and including reports for Thursday, November 26, 2020."
+
+To develop a new ```collection_week``` variable, we will download the facility level HHS data and map each ```collection_week``` to a ```date_id```. We will then group each unique data in the newer version of the data into bins of 7 days that will match the previous old collection_week bins.
+
+```{r message=FALSE, warning=FALSE}
+facility_level <- read_csv("data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_Facility_20210329.csv")
+
+facility_level <- facility_level %>% 
+  distinct(collection_week) %>%
+  mutate(collection_week = as.Date(collection_week)) %>%
+  data.frame() %>%
+  arrange(collection_week)
+
+# identify unique dates
+date_week_id <- facility_level %>% distinct(collection_week) %>% arrange(collection_week)
+date_week_id$date_id <- seq.int(nrow(date_week_id))
+date_week_id <- date_week_id %>%
+  rename("date" = collection_week)
+
+# function to bin all dates every 7 days
+all_dates <- hhs_data %>% distinct(date) %>% arrange(date)
+all_dates$date_id <- c(0, rep(1:(nrow(all_dates)-1)%/%7))+1
+
+# add the date_ids to main dataset and create new column "collection_week" with the first date for each date_id bin
+hhs_data <- hhs_data %>%
+  left_join(., all_dates, by = "date") %>% 
+  group_by(date_id) %>% 
+  mutate(collection_week = min(date)) %>%
+  ungroup() %>%
+  filter(!collection_week >= "2021-03-19") # remove the latest week due to incomplete data collection at the initial time of running this script
 ```
 
-Our primary variable of interest will be the ```previous_day_admission_pediatric_covid_confirmed_7_day_sum```. This will be used to identify the number of hospitals who admitted patients with a laboratory confirmed COVID-19 test on admission. 
 
-As defined by the HHS, this variable captures: 
-
-```
-"Sum of number of pediatric patients who were admitted to an inpatient bed, including NICU, PICU, newborn, and nursery, on the previous calendar day who had confirmed COVID-19 at the time of admission."
-
-```
-In rare cases, if the previous_day_admission column is a negative number, we will replace with a 0
-
-```{r}
-pediatric_data <- pediatric_data %>%
-  mutate(previous_day_admission_pediatric_covid_confirmed_7_day_sum = if_else(previous_day_admission_pediatric_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_pediatric_covid_confirmed_7_day_sum))
-```
-
-We will then create a variable ```pediatric_count``` where we record the maximum count recorded in any pediatric column. Additionally, we will identify the ```overall_pediatric_count```, a metric that can used to identify the highest count of pediatric patients at anytime. This will help us filter for hospitals that appear to be reporting pediatric cases during any collection week.
-
-```{r}
-pediatric_data <- pediatric_data %>% 
-  mutate(pediatric_count = do.call(pmax, c(select(., total_pediatric_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg:previous_day_admission_pediatric_covid_suspected_7_day_sum), na.rm = TRUE))) %>% 
-  group_by(hospital_pk, hospital_name) %>%
-  mutate(overall_pediatric_count = max(pediatric_count)) %>% 
-  ungroup()
-```
-
-Select hospitals that at some point had a pediatric count > 0. These hospitals will be be considered our pediatric hospital cohort
-
-```{r}
-pediatric_data <- pediatric_data %>% 
-  filter(overall_pediatric_count > 0)
-```
-
-**Adult Hospitalization Selection**
-
-We will perform a similar process to identify our adult hospital cohort. These will be the  hospitals which document at least one adult COVID-19 count.
-
-```{r}
-adult_data <- hhs_data %>% 
-  select(hospital_pk, collection_week, hospital_name, Region,
-         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_coverage,
-         total_adult_patients_hospitalized_confirmed_covid_7_day_coverage,
-         staffed_icu_adult_patients_confirmed_and_suspected_covid_7_day_coverage,
-         staffed_icu_adult_patients_confirmed_covid_7_day_coverage,
-         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg,
-         total_adult_patients_hospitalized_confirmed_covid_7_day_avg,
-         total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_sum,
-         total_adult_patients_hospitalized_confirmed_covid_7_day_sum,
-         staffed_icu_adult_patients_confirmed_and_suspected_covid_7_day_sum,
-         staffed_icu_adult_patients_confirmed_covid_7_day_sum,
-         previous_day_admission_adult_covid_confirmed_7_day_sum,
-         `previous_day_admission_adult_covid_confirmed_18-19_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_20-29_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_30-39_7_day_sum`, 
-         `previous_day_admission_adult_covid_confirmed_40-49_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_50-59_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_60-69_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_70-79_7_day_sum`, 
-         `previous_day_admission_adult_covid_confirmed_80+_7_day_sum`,
-         `previous_day_admission_adult_covid_confirmed_unknown_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_18-19_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_20-29_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_30-39_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_40-49_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_50-59_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_60-69_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_70-79_7_day_sum`, 
-         `previous_day_admission_adult_covid_suspected_80+_7_day_sum`,
-         `previous_day_admission_adult_covid_suspected_unknown_7_day_sum`)
-```
+**Data quality**
 
 In rare cases, if the previous_day_admission column is a negative number, we will replace with a 0
 
 ```{r}
-adult_data <- adult_data %>%
-  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = if_else(previous_day_admission_adult_covid_confirmed_7_day_sum < 0, 0, previous_day_admission_adult_covid_confirmed_7_day_sum))
+hhs_data <- hhs_data %>%
+  mutate(previous_day_admission_pediatric_covid_confirmed = if_else(previous_day_admission_pediatric_covid_confirmed < 0, 0,
+                                                                    previous_day_admission_pediatric_covid_confirmed),
+         previous_day_admission_adult_covid_confirmed = if_else(previous_day_admission_adult_covid_confirmed < 0, 0,
+                                                                previous_day_admission_adult_covid_confirmed))
 ```
 
-We will then create a variable ```adult_count``` where we record the maximum count recorded in any adult column. Additionally, we will identify the ```overall_adult_count```, a metric that can used to identify the highest count of adult patients during any collection week. This will help us filter for hospitals that appear to be reporting adult cases at some point 
+**Select columns of interest**
 
 ```{r}
-adult_data <- adult_data %>% 
-  mutate(adult_count = do.call(pmax, c(select(., total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg:previous_day_admission_adult_covid_suspected_7_day_sum), na.rm = TRUE))) %>% 
-  group_by(hospital_pk, hospital_name) %>%
-  mutate(overall_adult_count = max(adult_count)) %>% 
-  ungroup()
-```
-
-Select hospitals that at some point had an adult count > 0. These hospitals will be be considered our adult hospital cohort
-
-```{r}
-adult_data <- adult_data %>% 
-  filter(overall_adult_count > 0)
-```
-
-**Subset HHS Data with Selected Hospitals**
-
-```{r}
-pediatric_hosp <- pediatric_data %>%
-  ungroup() %>% 
-  distinct(hospital_pk) %>%
-  mutate(population = "pediatric")
-
-adult_hosp <- adult_data %>%
-  ungroup() %>% 
-  distinct(hospital_pk) %>%
-  mutate(population = "adult")
-
-hhs_pediatric_processed <- merge(hhs_data, pediatric_hosp, by = "hospital_pk")
-hhs_adult_processed <- merge(hhs_data, adult_hosp, by = "hospital_pk")
+hhs_data <- hhs_data %>% 
+  select(collection_week, state_abv, State, Region, POPEST18PLUS2020, POPEST17Under2020,
+         previous_day_admission_pediatric_covid_confirmed, previous_day_admission_adult_covid_confirmed)
 ```
 
 **Calculate Hospitalization Rates**
 
-```{r}
-hhs_pediatric_processed <- hhs_pediatric_processed %>%
-  group_by(collection_week) %>%
-  mutate(hospitalizations = sum(previous_day_admission_pediatric_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
-  ungroup() %>%
-  group_by(collection_week, Region) %>%
-  mutate(hospitalizations_region = sum(previous_day_admission_pediatric_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
-  ungroup() %>%
-  group_by(collection_week, State) %>%
-  mutate(hospitalizations_state = sum(previous_day_admission_pediatric_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
-  ungroup() %>%
-  group_by(collection_week, city) %>%
-  mutate(hospitalizations_city = previous_day_admission_pediatric_covid_confirmed_7_day_sum, na.rm = TRUE) %>%
-  ungroup()
+First, we will traify into pediatric and adult datasets
 
-hhs_adult_processed <- hhs_adult_processed %>%
+```{r}
+hhs_pediatric_processed <- hhs_data %>%
   group_by(collection_week) %>%
-  mutate(hospitalizations = sum(previous_day_admission_adult_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
+  mutate(hospitalizations = sum(previous_day_admission_pediatric_covid_confirmed, na.rm = TRUE)) %>%
   ungroup() %>%
   group_by(collection_week, Region) %>%
-  mutate(hospitalizations_region = sum(previous_day_admission_adult_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
+  mutate(hospitalizations_region = sum(previous_day_admission_pediatric_covid_confirmed, na.rm = TRUE)) %>%
   ungroup() %>%
-  group_by(collection_week, State) %>%
-  mutate(hospitalizations_state = sum(previous_day_admission_adult_covid_confirmed_7_day_sum, na.rm = TRUE)) %>%
+  select(collection_week, state_abv, State, Region, POPEST18PLUS2020, POPEST17Under2020, 
+         hospitalizations, hospitalizations_region) %>%
+  mutate(population = "pediatric")
+
+hhs_adult_processed <- hhs_data %>%
+  group_by(collection_week) %>%
+  mutate(hospitalizations = sum(previous_day_admission_adult_covid_confirmed, na.rm = TRUE)) %>%
   ungroup() %>%
-  group_by(collection_week, city) %>%
-  mutate(hospitalizations_city = previous_day_admission_adult_covid_confirmed_7_day_sum, na.rm = TRUE) %>%
-  ungroup()
+  group_by(collection_week, Region) %>%
+  mutate(hospitalizations_region = sum(previous_day_admission_adult_covid_confirmed, na.rm = TRUE)) %>%
+  ungroup() %>%
+  select(collection_week, state_abv, State, Region, POPEST18PLUS2020, POPEST17Under2020,
+         hospitalizations, hospitalizations_region) %>%
+  mutate(population = "adult")
 ```
 
 **Combine adult and pediatric hospitalizations**
 
 ```{r}
-hhs_data_proc <- rbind(hhs_pediatric_processed, hhs_adult_processed)
+hhs_data_proc <- rbind(hhs_pediatric_processed,
+                       hhs_adult_processed)
 ```
 
 **Standardize Hospitalization Rates**
@@ -292,19 +215,8 @@ region_estimates <- hhs_data_proc %>%
   distinct()
 
 
-state_estimates <- hhs_data_proc %>% 
-  ungroup() %>%
-  distinct(State, POPEST17Under2020, POPEST18PLUS2020) %>%
-  group_by(State) %>%
-  mutate(State_census_pediatric = sum(POPEST17Under2020),
-         State_census_adult = sum(POPEST18PLUS2020)) %>%
-  select(State, State_census_pediatric, State_census_adult) %>%
-  distinct()
-
-
 hhs_data_proc <- hhs_data_proc %>%
   left_join(., region_estimates, by = "Region") %>%
-  left_join(., state_estimates, by = "State") %>%
   mutate(hospitalizations_standardized_us = if_else(population == "pediatric", 
                                                     hospitalizations/pop_pediatric_nation*100000,
          hospitalizations/pop_adult_nation*100000)) %>%
@@ -312,28 +224,10 @@ hhs_data_proc <- hhs_data_proc %>%
   mutate(hospitalizations_standardized_region = if_else(population == "pediatric", 
                                                     hospitalizations_region/Region_census_pediatric*100000,
          hospitalizations_region/Region_census_adult*100000)) %>%
-  ungroup() %>% 
-  group_by(collection_week, population, State) %>% 
-  mutate(hospitalizations_standardized_state = if_else(population == "pediatric", 
-                                                       hospitalizations_state/State_census_pediatric*100000,
-                                                       hospitalizations_state/State_census_adult*100000)) %>%
   ungroup()
 ```
 
-**Save processed data**
-```{r}
-save(hhs_data_proc, file = "data/hhs_data_proc.rda")
-```
-
 ## **Statistics**
-
-**Total Number of Hospitals that Reported > 0 Pediatric or Adult COVID-19 Hospitalizations during at least one collection week**
-
-```{r}
-nrow(hhs_data_proc %>% filter(previous_day_admission_pediatric_covid_confirmed_7_day_sum > 0 |
-                                previous_day_admission_adult_covid_confirmed_7_day_sum > 0) %>%
-       distinct(hospital_pk, hospital_name))
-```
 
 **Total Number of Pediatric and Adult Hospitalizations over data collection**
 
@@ -361,7 +255,6 @@ hosp_counts_med <- hhs_data_proc %>%
 
 datatable(hosp_counts_med)
 ```
-
 
 **National Median Hospitalization Rate per 100,000 Children/Adults**
 
@@ -398,7 +291,6 @@ regional_stats <- hhs_data_proc %>%
 datatable(regional_stats)
 ```
 
-
 ## **National Hospitalization Trends**
 
 ```{r}
@@ -407,7 +299,7 @@ ggplot(hhs_data_proc %>%
        distinct(collection_week, hospitalizations_standardized_us, population),
        aes(x = collection_week, y = hospitalizations_standardized_us, color = population)) + 
   geom_line() + 
-  geom_point() + 
+  geom_point() +
   scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
   ylab("Hospitalizations per 100K Adults") + 
   xlab("") + 
@@ -460,13 +352,13 @@ ggplot(hhs_data_proc %>%
                                                  hospitalizations_standardized_region*10, hospitalizations_standardized_region)) %>%
          distinct(collection_week, Region, population, hospitalizations_standardized_region),
        aes(x = collection_week, y = hospitalizations_standardized_region, color = population)) + 
-  geom_point() + 
+  geom_point() +
   geom_line(alpha=0.9) + 
   scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
   ylab("Hospitalizations per 100k Adults") + 
   xlab("") + 
   scale_x_date(date_labels = "%b", date_breaks = "1 month") + 
-  scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalations per 100k Children")) + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalizations per 100k Children")) + 
   theme_bw() +
   theme(plot.title = element_text(""),
         legend.title = element_text(face = "bold", size = 15),
@@ -491,7 +383,7 @@ lowValue = "#ffffff"
 customOrange = "#D95F02"
 customGreen = "#1B9E77"
 
-reg_table <- hhs_data_proc %>% 
+region_table <- hhs_data_proc %>% 
   distinct(collection_week, Region, hospitalizations_standardized_region, population) %>% 
   mutate(hospitalizations_standardized_region = round(hospitalizations_standardized_region, 2)) %>%
   arrange(collection_week) %>%
@@ -506,7 +398,7 @@ reg_table <- hhs_data_proc %>%
 
 ```{r}
 as.datatable(
-  formattable(reg_table %>% filter(Region == "Midwest") %>% select(-Region), align = c('c', 'c','c'),  list(
+  formattable(region_table %>% filter(Region == "Midwest") %>% select(-Region), align = c('c', 'c','c'),  list(
             `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
             `Child Hospitalizations`= color_tile(lowValue, customOrange),
             `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
@@ -517,7 +409,7 @@ as.datatable(
 
 ```{r}
 as.datatable(
-  formattable(reg_table %>% filter(Region == "Northeast") %>% select(-Region), align = c('c', 'c','c'),  list(
+  formattable(region_table %>% filter(Region == "Northeast") %>% select(-Region), align = c('c', 'c','c'),  list(
             `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
             `Child Hospitalizations`= color_tile(lowValue, customOrange),
             `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
@@ -528,7 +420,7 @@ as.datatable(
 
 ```{r}
 as.datatable(
-  formattable(reg_table %>% filter(Region == "South") %>% select(-Region), align = c('c', 'c','c'),  list(
+  formattable(region_table %>% filter(Region == "South") %>% select(-Region), align = c('c', 'c','c'),  list(
             `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
             `Child Hospitalizations`= color_tile(lowValue, customOrange),
             `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
@@ -539,20 +431,594 @@ as.datatable(
 
 ```{r}
 as.datatable(
-  formattable(reg_table %>% filter(Region == "West") %>% select(-Region), align = c('c', 'c','c'),  list(
+  formattable(region_table %>% filter(Region == "West") %>% select(-Region), align = c('c', 'c','c'),  list(
             `Indicator Name` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")),
             `Child Hospitalizations`= color_tile(lowValue, customOrange),
             `Adult Hospitalizations`= color_tile(lowValue, customGreen)))
   )
 ```
 
+## **Change Point Analysis**
+
+Import the [AAP pediatric and adult case counts](https://services.aap.org/en/pages/2019-novel-coronavirus-covid-19-infections/children-and-covid-19-state-level-data-report/)
+
+```{r}
+aap <- read.csv("data/processed_aap_case_data_2021.03.18.csv")
+
+# change point functions
+source("R/functions_to_share.R")
+```
+
+```{r}
+## incorporate AAP 
+# note: AAP data week means data was collected up to the end of the week 
+# hhs week indicates the beginning of data collection
+aap$Date <- as.Date(aap$Date)
+
+aap <- aap %>% arrange(Date)
+
+# remove the 730 date as this is before we have HHS data
+aap <- aap %>% filter(!Date <= "2020-07-30")
+
+## add sequence to week
+aap$date_id <- seq.int(nrow(aap))
+
+## modify the HHS datast
+date_week_id <- hhs_data_proc %>% distinct(collection_week) %>% arrange(collection_week)
+date_week_id$date_id <- seq.int(nrow(date_week_id))
+
+hhs_data_proc <- hhs_data_proc %>% left_join(., date_week_id, by = "collection_week") %>% 
+  left_join(., aap, by = "date_id")
+
+hhs_data_proc$Weekly_Pediatric_Case <- as.numeric(as.character(hhs_data_proc$Weekly_Pediatric_Case))
+
+hhs_data_proc <- hhs_data_proc %>%
+  mutate(Weekly_Pediatric_Case_standardized = Weekly_Pediatric_Case/pop_pediatric_nation*100000)
+```
+
+
+```{r}
+ggplot(hhs_data_proc %>% 
+         #mutate(hospitalizations_standardized_us = if_else(population == "pediatric", hospitalizations_standardized_us*15, hospitalizations_standardized_us)) %>% 
+         #mutate(hospitalizations_standardized_us = hospitalizations_standardized_us*20) %>% 
+         filter(!population == "pediatric") %>%
+         distinct(collection_week, hospitalizations_standardized_us, population, Weekly_Pediatric_Case_standardized) %>%
+         pivot_longer(cols = hospitalizations_standardized_us:Weekly_Pediatric_Case_standardized, 
+                      names_to = "type", values_to = "count") %>%
+         na.omit() %>% # 3/5/21 - missing AAP updated data
+         mutate(population = as.character(population),
+                population = if_else(type == "Weekly_Pediatric_Case_standardized", "x_cases", population)) %>%
+         distinct(),
+       aes(x = collection_week, y = count, color = population)) + 
+  geom_point() + 
+  #geom_area(aes(fill = "x_cases")) + 
+  geom_line(aes(linetype = population)) +
+  #geom_ribbon(data = . %>% filter(population == "x_cases"), stat ="identity", aes(fill = population, ymin = 0, ymax = count),alpha=0.6) +
+  scale_color_brewer(palette="Dark2", labels = c("Adult Hospitalizations", "Child Cases"), 
+                     name = "") + 
+  ylab("Adult Hospitalizations / Child Cases") + 
+  #ylab("Adult Hospitalizations\nChild Cases") + 
+  xlab("") + 
+  scale_x_date(date_labels = "%b-%d", date_breaks = "1 month") + 
+  #scale_y_continuous(sec.axis = sec_axis(~ ./15, name = "Child Hospitalizations")) + 
+  scale_linetype_manual(values=c("solid", "solid", "dashed")) +
+  guides(linetype = FALSE,color=guide_legend(override.aes=list(linetype=c(1,2)))) + ## Drop the dummy legend ##
+  theme_bw() 
+```
+
+### National Cases and Hospitalization Trends
+
+```{r}
+set.seed(101)
+```
+
+
+```{r}
+ped_cases <- hhs_data_proc %>% 
+  ungroup() %>% 
+  select(collection_week, Weekly_Pediatric_Case_standardized) %>% 
+  arrange(collection_week) %>%
+  distinct(Weekly_Pediatric_Case_standardized) %>%
+  na.omit() 
+
+ped_cases_mat <- t(data.matrix(ped_cases))
+row.names(ped_cases_mat) <- NULL
+
+## adult hosps
+adult_hosps <- hhs_data_proc %>% 
+  ungroup() %>% 
+  filter(population == "adult") %>%
+  select(collection_week, hospitalizations_standardized_us) %>% 
+  arrange(collection_week) %>%
+  distinct(hospitalizations_standardized_us)
+
+adult_hosps_mat <- t(data.matrix(adult_hosps))
+row.names(adult_hosps_mat) <- NULL
+
+## pediatric hosps
+ped_hosps <- hhs_data_proc %>% 
+  ungroup() %>% 
+  filter(population == "pediatric") %>%
+  select(collection_week, hospitalizations_standardized_us) %>% 
+  arrange(collection_week) %>%
+  distinct(hospitalizations_standardized_us)
+
+ped_hosps_mat <- t(data.matrix(ped_hosps))
+row.names(ped_hosps_mat) <- NULL
+```
+
+### Adult Hospitalizations
+
+```{r}
+cp_nat_adult <- change_point_test(adult_hosps_mat, w = rep(1 / nrow(adult_hosps_mat), nrow(adult_hosps_mat)), 
+                              t_range = 2:(ncol(adult_hosps_mat) - 2), boot_num = 10000)
+```
+
+### Pediatric Hospitalizations
+
+```{r}
+cp_nat_ped <- change_point_test(ped_hosps_mat, w = rep(1 / nrow(ped_hosps_mat), nrow(ped_hosps_mat)), 
+                              t_range = 2:(ncol(ped_hosps_mat) - 2), boot_num = 10000)
+```
+
+### Pediatric Cases
+
+```{r}
+cp_nat_ped_cases <- change_point_test(ped_cases_mat, w = rep(1 / nrow(ped_cases_mat), nrow(ped_cases_mat)), 
+                              t_range = 2:(ncol(ped_cases_mat) - 2), boot_num = 10000)
+```
+
+### Hospitalizations Change Point by Region
+
+*We can’t do cases since we don’t have this data for pediatrics per region yet*
+
+### Midwest Adult
+
+```{r}
+midwest_adult_hosps <- hhs_data_proc %>% 
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "adult" & Region == "Midwest") %>%
+  distinct(hospitalizations_standardized_region) 
+
+midwest_adult_hosps_mat <- t(data.matrix(midwest_adult_hosps))
+row.names(midwest_adult_hosps_mat) <- NULL
+
+cp_reg_midwest_adult <- change_point_test(midwest_adult_hosps_mat, w = rep(1 / nrow(midwest_adult_hosps_mat), nrow(midwest_adult_hosps_mat)), 
+                              t_range = 2:(ncol(midwest_adult_hosps_mat) - 2), boot_num = 10000)
+```
+
+### Midwest Pediatric
+
+```{r}
+midwest_ped_hosps <- hhs_data_proc %>%
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "pediatric" & Region == "Midwest") %>%
+  distinct(hospitalizations_standardized_region) 
+
+midwest_ped_hosps_mat <- t(data.matrix(midwest_ped_hosps))
+row.names(midwest_ped_hosps_mat) <- NULL
+
+
+cp_reg_midwest_ped <- change_point_test(midwest_ped_hosps_mat, w = rep(1 / nrow(midwest_ped_hosps_mat), nrow(midwest_ped_hosps_mat)), 
+                              t_range = 2:(ncol(midwest_ped_hosps_mat) - 2), boot_num = 10000)
+```
+
+### Northeast Adult
+
+```{r}
+northeast_adult_hosps <- hhs_data_proc %>% 
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "adult" & Region == "Northeast") %>%
+  distinct(hospitalizations_standardized_region) 
+
+northeast_adult_hosps_mat <- t(data.matrix(northeast_adult_hosps))
+row.names(northeast_adult_hosps_mat) <- NULL
+
+cp_reg_northeast_adult <-change_point_test(northeast_adult_hosps_mat, w = rep(1 / nrow(northeast_adult_hosps_mat), nrow(northeast_adult_hosps_mat)), 
+                              t_range = 2:(ncol(northeast_adult_hosps_mat) - 2), boot_num = 10000)
+```
+
+### Northeast Pediatric
+
+```{r}
+northeast_ped_hosps <- hhs_data_proc %>%
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "pediatric" & Region == "Northeast") %>%
+  distinct(hospitalizations_standardized_region) 
+
+northeast_ped_hosps_mat <- t(data.matrix(northeast_ped_hosps))
+row.names(northeast_ped_hosps_mat) <- NULL
+
+cp_reg_northeast_ped <- change_point_test(northeast_ped_hosps_mat, w = rep(1 / nrow(northeast_ped_hosps_mat), nrow(northeast_ped_hosps_mat)), 
+                              t_range = 2:(ncol(northeast_ped_hosps_mat) - 2), boot_num = 10000)
+```
+
+### South Adult
+
+```{r}
+south_adult_hosps <- hhs_data_proc %>% 
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "adult" & Region == "South") %>%
+  distinct(hospitalizations_standardized_region) 
+
+south_adult_hosps_mat <- t(data.matrix(south_adult_hosps))
+row.names(south_adult_hosps_mat) <- NULL
+
+cp_reg_south_adult <-change_point_test(south_adult_hosps_mat, w = rep(1 / nrow(south_adult_hosps_mat), nrow(south_adult_hosps_mat)), 
+                              t_range = 2:(ncol(south_adult_hosps_mat) - 2), boot_num = 10000)
+```
+
+### South Pediatric
+
+```{r}
+south_ped_hosps <- hhs_data_proc %>%
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "pediatric" & Region == "South") %>%
+  distinct(hospitalizations_standardized_region) 
+
+south_ped_hosps_mat <- t(data.matrix(south_ped_hosps))
+row.names(south_ped_hosps_mat) <- NULL
+
+cp_reg_south_ped <- change_point_test(south_ped_hosps_mat, w = rep(1 / nrow(south_ped_hosps_mat), nrow(south_ped_hosps_mat)), 
+                              t_range = 2:(ncol(south_ped_hosps_mat) - 2), boot_num = 10000)
+```
+
+### West Adult
+
+```{r}
+west_adult_hosps <- hhs_data_proc %>% 
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "adult" & Region == "West") %>%
+  distinct(hospitalizations_standardized_region) 
+
+west_adult_hosps_mat <- t(data.matrix(west_adult_hosps))
+row.names(west_adult_hosps_mat) <- NULL
+
+cp_reg_west_adult <- change_point_test(west_adult_hosps_mat, w = rep(1 / nrow(west_adult_hosps_mat), nrow(west_adult_hosps_mat)), 
+                              t_range = 2:(ncol(west_adult_hosps_mat) - 2), boot_num = 10000)
+```
+
+### West Pediatric
+
+```{r}
+west_ped_hosps <- hhs_data_proc %>%
+  distinct(collection_week, Region, population, hospitalizations_standardized_region) %>% 
+  arrange(collection_week) %>%
+  filter(population == "pediatric" & Region == "West") %>%
+  distinct(hospitalizations_standardized_region) 
+
+west_ped_hosps_mat <- t(data.matrix(west_ped_hosps))
+row.names(west_ped_hosps_mat) <- NULL
+
+cp_reg_west_ped <- change_point_test(west_ped_hosps_mat, w = rep(1 / nrow(west_ped_hosps_mat), nrow(west_ped_hosps_mat)), 
+                              t_range = 2:(ncol(west_ped_hosps_mat) - 2), boot_num = 10000)
+```
+
+### Change Point Results
+
+**National Level**
+
+```{r}
+cp_nat_adult <- unlist(cp_nat_adult) %>% 
+  data.frame()
+colnames(cp_nat_adult)[1] <- "National Adult Hospitalizations"
+
+cp_nat_ped <- unlist(cp_nat_ped) %>% 
+  data.frame()
+colnames(cp_nat_ped)[1] <- "National Pediatric Hospitalizations"
+
+cp_nat_ped_cases <- unlist(cp_nat_ped_cases) %>% 
+  data.frame()
+colnames(cp_nat_ped_cases)[1] <- "National Pediatric Cases"
+
+cp_nat_results <- cbind(cp_nat_adult, cp_nat_ped, cp_nat_ped_cases) %>% t() %>% data.frame()
+
+cp_nat_results <- cp_nat_results %>%
+  mutate(p.value = round(p.value,4),
+         stat = round(stat,1)) %>%
+  t()
+
+rownames(cp_nat_results) <- c("Change Point Week", "P-value", "F-Stat")
+
+datatable(cp_nat_results)
+```
+
+To help annotate plots
+
+```{r}
+#remotes::install_github("mattcowgill/ggannotate")
+library(ggannotate) #ggannotate(plot) 
+```
+
+
+```{r}
+cp_peds <- cp_nat_results %>% 
+  data.frame() %>%
+  select(National.Pediatric.Hospitalizations) %>% 
+  slice(1L) %>%
+  as.numeric()
+
+cp_peds_xy <- hhs_data_proc %>% 
+  data.frame() %>% 
+  distinct(date_id, collection_week, hospitalizations_standardized_us, population) %>% 
+  filter(date_id == cp_peds, 
+         population == "pediatric")
+
+
+cp_adults <- cp_nat_results %>% 
+  data.frame() %>%
+  select(National.Adult.Hospitalizations) %>% 
+  slice(1L) %>%
+  as.numeric()
+
+cp_adults_xy <- hhs_data_proc %>% 
+  data.frame() %>% 
+  distinct(date_id, collection_week, hospitalizations_standardized_us, population) %>% 
+  filter(date_id == cp_adults, 
+         population == "adult")
+
+ggplot(hhs_data_proc %>% 
+         mutate(hospitalizations_standardized_us = if_else(population == "pediatric", hospitalizations_standardized_us*10, hospitalizations_standardized_us)) %>% 
+       distinct(collection_week, hospitalizations_standardized_us, population),
+       aes(x = collection_week, y = hospitalizations_standardized_us, color = population)) + 
+  geom_line() + 
+  geom_point() +
+  scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
+  ylab("Hospitalizations per 100K Adults") + 
+  xlab("") + 
+  scale_x_date(date_labels = "%b-%d", date_breaks = "1 month") + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalizations per 100K Children")) + 
+  geom_text(data = data.frame(x = cp_adults_xy$collection_week,
+                              y = cp_adults_xy$hospitalizations_standardized_us,
+                              label = "*"),
+            mapping = aes(x = x, y = y, label = label),
+            size = 12, hjust = 0.45, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_peds_xy$collection_week,
+                              y = cp_peds_xy$hospitalizations_standardized_us*10, 
+                              label = "*"),
+            mapping = aes(x = x, y = y, label = label),
+            size = 12, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) + 
+  theme_bw() + 
+  theme(plot.title = element_text(""),
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size=15),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        axis.text.x = element_text(face = "bold", size = 10),
+        axis.title.y = element_text(face = "bold", size = 13, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 13, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 13, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02'))
+```
+
+**Regional Level**
+
+```{r}
+cp_reg_midwest_adult <- unlist(cp_reg_midwest_adult) %>% 
+  data.frame()
+colnames(cp_reg_midwest_adult)[1] <- "Midwest Adult"
+
+cp_reg_midwest_ped <- unlist(cp_reg_midwest_ped) %>% 
+  data.frame()
+colnames(cp_reg_midwest_ped)[1] <- "Midwest Pediatric"
+
+cp_reg_south_adult <- unlist(cp_reg_south_adult) %>% 
+  data.frame()
+colnames(cp_reg_south_adult)[1] <- "South Adult"
+
+cp_reg_south_ped <- unlist(cp_reg_south_ped) %>% 
+  data.frame()
+colnames(cp_reg_south_ped)[1] <- "South Pediatric"
+
+cp_reg_west_adult <- unlist(cp_reg_west_adult) %>% 
+  data.frame()
+colnames(cp_reg_west_adult)[1] <- "West Adult"
+
+cp_reg_west_ped <- unlist(cp_reg_west_ped) %>% 
+  data.frame()
+colnames(cp_reg_west_ped)[1] <- "West Pediatric"
+
+cp_reg_northeast_adult <- unlist(cp_reg_northeast_adult) %>% 
+  data.frame()
+colnames(cp_reg_northeast_adult)[1] <- "Northeast Adult"
+
+cp_reg_northeast_ped <- unlist(cp_reg_northeast_ped) %>% 
+  data.frame()
+colnames(cp_reg_northeast_ped)[1] <- "Northeast Pediatric"
+
+cp_reg_results <- cbind(cp_reg_midwest_adult, cp_reg_midwest_ped,
+                        cp_reg_south_adult, cp_reg_south_ped,
+                        cp_reg_west_adult, cp_reg_west_ped,
+                        cp_reg_northeast_adult, cp_reg_northeast_ped) %>% 
+  t() %>% 
+  data.frame()
+
+cp_reg_results <- cp_reg_results %>%
+  mutate(p.value = round(p.value,4),
+         stat = round(stat,1)) %>%
+  t()
+
+rownames(cp_reg_results) <- c("Change Point Week", "P-value", "F-Stat")
+
+datatable(cp_reg_results)
+```
+
+```{r}
+cp_peds <- cp_reg_results %>% 
+  data.frame() %>%
+  select(contains("Pediatric")) %>% 
+  slice(1L) %>%
+  t() 
+
+region_col <- data.frame(Region = c("Midwest", "South", "West", "Northeast"))
+
+cp_peds <- cbind(cp_peds, region_col)
+rownames(cp_peds) <- NULL
+
+
+cp_adults <- cp_reg_results %>% 
+  data.frame() %>%
+  select(contains("Adult")) %>% 
+  slice(1L) %>%
+  t() 
+
+cp_adults <- cbind(cp_adults, region_col)
+rownames(cp_adults) <- NULL
+
+cp_peds_xy <- hhs_data_proc %>% 
+  data.frame() %>% 
+  left_join(., cp_peds, by = "Region") %>% 
+  distinct(date_id, collection_week, hospitalizations_standardized_region, population, Region, `Change Point Week`)
+
+cp_adults_xy <- hhs_data_proc %>% 
+  data.frame() %>% 
+  left_join(., cp_adults, by = "Region") %>% 
+  distinct(date_id, collection_week, hospitalizations_standardized_region, population, Region, `Change Point Week`)
 
 
 
-
-
-
-
-
-
+ggplot(hhs_data_proc %>%
+         mutate(hospitalizations_standardized_region = if_else(population == "pediatric", 
+                                                 hospitalizations_standardized_region*10, hospitalizations_standardized_region)) %>%
+         distinct(collection_week, Region, population, hospitalizations_standardized_region),
+       aes(x = collection_week, y = hospitalizations_standardized_region, color = population)) + 
+  geom_point() +
+  geom_line(alpha=0.9) +
+  # midwest change point identifier
+  geom_text(data = data.frame(x = cp_adults_xy %>% 
+                                filter(Region == "Midwest" & population == "adult",
+                                       date_id == `Change Point Week`) %>% 
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_adults_xy %>% 
+                                filter(Region == "Midwest" & population == "adult",
+                                       date_id == `Change Point Week`) %>% select(hospitalizations_standardized_region) %>%
+                                rename('y' = hospitalizations_standardized_region), 
+                              label = "*", Region = "Midwest"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_peds_xy %>% 
+                                filter(Region == "Midwest" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>% 
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_peds_xy %>% 
+                                filter(Region == "Midwest" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>%
+                                select(hospitalizations_standardized_region) %>%
+                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
+                                rename('y' = hospitalizations_standardized_region),
+                              label = "*", Region = "Midwest"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
+  # Northeast change point identifier
+  geom_text(data = data.frame(x = cp_adults_xy %>% 
+                                filter(Region == "Northeast" & population == "adult",
+                                       date_id == `Change Point Week`) %>% 
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_adults_xy %>% 
+                                filter(Region == "Northeast" & population == "adult",
+                                       date_id == `Change Point Week`) %>%
+                                select(hospitalizations_standardized_region) %>%
+                                rename('y' = hospitalizations_standardized_region), 
+                              label = "*", Region = "Northeast"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_peds_xy %>% 
+                                filter(Region == "Northeast" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>% 
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_peds_xy %>% 
+                                filter(Region == "Northeast" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>%
+                                select(hospitalizations_standardized_region) %>%
+                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
+                                rename('y' = hospitalizations_standardized_region),
+                              label = "*", Region = "Northeast"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
+  # South change point identifier
+  geom_text(data = data.frame(x = cp_adults_xy %>% 
+                                filter(Region == "South" & population == "adult",
+                                       date_id == `Change Point Week`) %>% 
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_adults_xy %>% 
+                                filter(Region == "South" & population == "adult",
+                                       date_id == `Change Point Week`) %>%
+                                select(hospitalizations_standardized_region) %>%
+                                rename('y' = hospitalizations_standardized_region), 
+                              label = "*", Region = "South"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_peds_xy %>% 
+                                filter(Region == "South" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>% 
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_peds_xy %>% 
+                                filter(Region == "South" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>%
+                                select(hospitalizations_standardized_region) %>%
+                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
+                                rename('y' = hospitalizations_standardized_region),
+                              label = "*", Region = "South"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) +
+  # West change point identifier
+  geom_text(data = data.frame(x = cp_adults_xy %>% 
+                                filter(Region == "West" & population == "adult",
+                                       date_id == `Change Point Week`) %>%
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_adults_xy %>% 
+                                filter(Region == "West" & population == "adult",
+                                       date_id == `Change Point Week`) %>%
+                                select(hospitalizations_standardized_region) %>%
+                                rename('y' = hospitalizations_standardized_region), 
+                              label = "*", Region = "West"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_peds_xy %>% 
+                                filter(Region == "West" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>% 
+                                select(collection_week) %>%
+                                rename('x' = collection_week),
+                              y = cp_peds_xy %>% 
+                                filter(Region == "West" & population == "pediatric",
+                                       date_id == `Change Point Week`) %>%
+                                select(hospitalizations_standardized_region) %>%
+                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
+                                rename('y' = hospitalizations_standardized_region),
+                              label = "*", Region = "West"),
+            mapping = aes(x = x, y = y, label = label),
+            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) +
+  scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
+  ylab("Hospitalizations per 100k Adults") + 
+  xlab("") + 
+  scale_x_date(date_labels = "%b", date_breaks = "1 month") + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalizations per 100k Children")) + 
+  theme_bw() +
+  theme(plot.title = element_text(""),
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size=15),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        axis.text.x = element_text(face = "bold", size = 10),
+        axis.title.y = element_text(face = "bold", size = 13, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 13, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 13, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02')) + 
+  facet_wrap(~Region, scales = "fixed") + 
+  theme(strip.text.x = element_text(size = 18))  
+```
 
