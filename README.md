@@ -4,6 +4,7 @@
 
 **[View Completed Analysis, Stats, and Figures](https://meghutch.github.io/Hospitalization_Trends.html)**
 
+**[View Our Interactive Dashboard using Hospital Level Data](https://meg-hutch.shinyapps.io/covid-19_hospitalization_dash/)** 
 ## About the Data
 
 The analysis examines COVID-19 Hospitalizations as reported weekly from all 50 states including the District of Columbia, from July 31, 2020 until March 18, 2021.
