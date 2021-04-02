@@ -24,7 +24,7 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 **3. (Optional): Download latest data from the [(HHS)](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh) and replace the new file name:**
 
-**Alternatively, one may choose to run Hospitalizations_Trends_Hospital_Level.Rmd to conduct a similar analysis on HHS [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh)**
+**Alternatively, one may choose to run Hospitalizations_Trends_Hospital_Level.Rmd to conduct a similar analysis on HHS [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh)[5]**
 
 ```hhs_data <- read_csv('data/new_file_name_here.csv)```
 
@@ -37,6 +37,8 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 3. Facility COVID PUF Community FAQ. Github Web site. Updated December 15, 2020. Accessed February 24, 2021. https://github.com/CareSet/COVID_Hospital_PUF?src=hd
 
 4. SC-EST2020-18+POP-RES. U.S. Census Bureau, Population Division. 2020. Accessed February 9, 2020. https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/
+
+5. COVID-19 Reported Patient Impact and Hospital Capacity by Facility. HealthData Web site. Updated March 29, 2021. Accessed March 29, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u
 
 Data is publicly available under the **Public Domain U.S. Government** [license](https://www.usa.gov/government-works)[1]
 
