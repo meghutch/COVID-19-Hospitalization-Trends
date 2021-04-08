@@ -31,7 +31,7 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 ## **Analysis**
 
-The Analysis reports the median standardized hospitalization rates and plots figures of the trends. The change point analysis finds identifies the most likely time point for the shift in mean hospitalizations [6] (**R/change_point_function.R** written by [Molei Liu](https://github.com/moleibobliu))
+The Analysis reports the median standardized hospitalization rates and plots figures of the trends. The change point analysis finds identifies the most likely time point for the shift in mean hospitalizations [6] (**R/change_point_function.R** written by **[Molei Liu](https://github.com/moleibobliu)**)
 
 ## References
 
