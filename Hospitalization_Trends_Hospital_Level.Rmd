@@ -1,6 +1,6 @@
 ---
 title: "COVID-19 Hospitalization Trends"
-author: "Meghan Hutch,  Paul Avillach, Yuan Luo, Florence Bourgeois"
+author: "Meghan Hutch,  Molei Liu, Paul Avillach, Yuan Luo, Florence Bourgeois"
 date: "2/24/2021"
 output: html_document
 ---
