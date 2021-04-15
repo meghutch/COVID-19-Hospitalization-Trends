@@ -25,9 +25,9 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 **3. (Optional): Download latest data from the [(HHS)](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh) and replace the new file name:**
 
-**Alternatively, one may choose to run Hospitalizations_Trends_Hospital_Level.Rmd to conduct a similar analysis on HHS [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh)[5]**
-
 ```hhs_data <- read_csv('data/new_file_name_here.csv)```
+
+**Alternatively, one may choose to run Hospitalizations_Trends_Hospital_Level.Rmd to conduct a similar analysis on HHS [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u)[5]**
 
 ## **Analysis**
 
