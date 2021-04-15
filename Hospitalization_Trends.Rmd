@@ -24,7 +24,7 @@ library(DT)
 **Import HHS Hospitalization Counts and Census Data**
 
 ```{r message=FALSE, warning=FALSE}
-hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State_Timeseries_20210325.csv')
+hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State_Timeseries_20210413.csv')
 
 census_data <- read.csv('data/sc-est2020-18+pop-res.csv')
 
@@ -131,7 +131,7 @@ hhs_data <- hhs_data %>%
   group_by(date_id) %>% 
   mutate(collection_week = min(date)) %>%
   ungroup() %>%
-  filter(!collection_week >= "2021-03-19") # remove the latest week due to incomplete data collection at the initial time of running this script
+  filter(!collection_week >= "2021-04-09") # remove the latest week due to incomplete data collection at the initial time of running this script
 ```
 
 
@@ -157,7 +157,7 @@ hhs_data <- hhs_data %>%
 
 **Calculate Hospitalization Rates**
 
-First, we will traify into pediatric and adult datasets
+First, we will straify into pediatric and adult datasets
 
 ```{r}
 hhs_pediatric_processed <- hhs_data %>%
