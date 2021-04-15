@@ -29,6 +29,10 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 ```hhs_data <- read_csv('data/new_file_name_here.csv)```
 
+## **Analysis**
+
+The Analysis reports the median standardized hospitalization rates and plots figures of the trends. The change point analysis finds identifies the most likely time point for the shift in mean hospitalizations [6] (**R/change_point_function.R** written by **[Molei Liu](https://github.com/moleibobliu)**)
+
 ## References
 
 1. COVID-19 Reported Patient Impact and Hospital Capacity by State Timeseries. HealthData Web site. Updated March 20, 2021. Accessed March 25, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh
@@ -40,6 +44,8 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 4. SC-EST2020-18+POP-RES. U.S. Census Bureau, Population Division. 2020. Accessed February 9, 2020. https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/
 
 5. COVID-19 Reported Patient Impact and Hospital Capacity by Facility. HealthData Web site. Updated March 29, 2021. Accessed March 29, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u
+
+6. Zhang, N. R., Siegmund, D. O., Ji, H., and Li, J. Z. Detecting simultaneous changepoints in multiple sequences. Biometrika. 2010;97(3):631–645. 
 
 Data is publicly available under the **Public Domain U.S. Government** [license](https://www.usa.gov/government-works)[1]
 
