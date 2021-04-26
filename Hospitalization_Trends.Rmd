@@ -24,7 +24,7 @@ library(DT)
 **Import HHS Hospitalization Counts and Census Data**
 
 ```{r message=FALSE, warning=FALSE}
-hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State_Timeseries_20210413.csv')
+hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State_Timeseries_20210417.csv')
 
 census_data <- read.csv('data/sc-est2020-18+pop-res.csv')
 
@@ -131,7 +131,7 @@ hhs_data <- hhs_data %>%
   group_by(date_id) %>% 
   mutate(collection_week = min(date)) %>%
   ungroup() %>%
-  filter(!collection_week >= "2021-04-09") # remove the latest week due to incomplete data collection at the initial time of running this script
+  filter(!collection_week >= "2021-04-16") # remove the latest week due to incomplete data collection at the initial time of running this script
 ```
 
 
@@ -273,24 +273,6 @@ national_stats <- hhs_data_proc %>%
 datatable(national_stats)
 ```
 
-**Regional Median Hospitalization Rates per 100,000 Children/Adults**
-
-```{r}
-regional_stats <- hhs_data_proc %>% 
-  distinct(population, Region, hospitalizations_standardized_region) %>%
-  group_by(population, Region) %>%
-  mutate(Q1 = round(quantile(hospitalizations_standardized_region, 0.25), 1),
-         Median = round(median(hospitalizations_standardized_region), 1),
-         Q3 = round(quantile(hospitalizations_standardized_region, 0.75), 1)) %>%
-  select(-hospitalizations_standardized_region) %>%
-  distinct() %>%
-  arrange(Region) %>%
-  ungroup() %>%
-  as.data.frame()
-
-datatable(regional_stats)
-```
-
 ## **National Hospitalization Trends**
 
 ```{r}
@@ -345,6 +327,24 @@ as.datatable(
 ```
 
 ## **Regional Hospitalization Trends**
+
+**Regional Median Hospitalization Rates per 100,000 Children/Adults**
+
+```{r}
+regional_stats <- hhs_data_proc %>% 
+  distinct(population, Region, hospitalizations_standardized_region) %>%
+  group_by(population, Region) %>%
+  mutate(Q1 = round(quantile(hospitalizations_standardized_region, 0.25), 1),
+         Median = round(median(hospitalizations_standardized_region), 1),
+         Q3 = round(quantile(hospitalizations_standardized_region, 0.75), 1)) %>%
+  select(-hospitalizations_standardized_region) %>%
+  distinct() %>%
+  arrange(Region) %>%
+  ungroup() %>%
+  as.data.frame()
+
+datatable(regional_stats)
+```
 
 ```{r}
 ggplot(hhs_data_proc %>%
