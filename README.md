@@ -7,7 +7,7 @@
 **[View Our Interactive Dashboard using Hospital Level Data](https://meg-hutch.shinyapps.io/covid-19_hospitalization_dash/)** 
 ## About the Data
 
-The analysis examines COVID-19 Hospitalizations as reported weekly from all 50 states including the District of Columbia, from July 31, 2020 until March 18, 2021.
+The analysis examines COVID-19 Hospitalizations as reported weekly from all 50 states including the District of Columbia, from July 31, 2020 until April 15, 2021.
 
 Data was acquired through the [United States Department of Health and Human Services (HHS)](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh)[1,2]
 
@@ -35,9 +35,9 @@ The Analysis reports the median standardized hospitalization rates and plots fig
 
 ## References
 
-1. COVID-19 Reported Patient Impact and Hospital Capacity by State Timeseries. HealthData Web site. Updated March 20, 2021. Accessed March 25, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh
+1. COVID-19 Reported Patient Impact and Hospital Capacity by State Timeseries. HealthData Web site. Updated April 17, 2021. Accessed April 22, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh
 
-2. COVID-19 Guidance for Hospital Reporting and FAQs. Human and Health Services Web site. U.S. Department of Human and Health Services. Updated January 21, 2021. Accessed February 18, 2020. https://www.hhs.gov/sites/default/files/covid-19-faqs-hospitals-hospital-laboratory-acute-care-facility-data-reporting.pdf
+2. COVID-19 Guidance for Hospital Reporting and FAQs. Human and Health Services Web site. U.S. Department of Human and Health Services. Updated March 19, 2021. Accessed March 25, 2020. https://www.hhs.gov/sites/default/files/covid-19-faqs-hospitals-hospital-laboratory-acute-care-facility-data-reporting.pdf
 
 3. Facility COVID PUF Community FAQ. Github Web site. Updated December 15, 2020. Accessed February 24, 2021. https://github.com/CareSet/COVID_Hospital_PUF?src=hd
 
