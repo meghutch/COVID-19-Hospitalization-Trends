@@ -324,7 +324,7 @@ hhs_data_proc <- hhs_data_proc %>%
 **Save processed data**
 
 ```{r}
-save(hhs_data_proc, file = "data/hhs_data_proc.rda")
+save(hhs_data_proc, file = "processed_data/hhs_data_proc.rda")
 ```
 
 ## **Statistics**
