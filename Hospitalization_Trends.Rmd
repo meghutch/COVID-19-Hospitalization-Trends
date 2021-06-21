@@ -1,7 +1,7 @@
 ---
 title: "COVID-19 Hospitalization Trends"
 author: "Meghan Hutch, Molei Liu, Paul Avillach, Yuan Luo, Florence Bourgeois"
-date: "2/24/2021"
+date: "4/26/2021"
 output: html_document
 ---
 
@@ -17,6 +17,8 @@ library(ggplot2)
 library(formattable)
 library(data.table)
 library(DT)
+#remotes::install_github("mattcowgill/ggannotate")
+library(ggannotate) #ggannotate(plot) 
 ```
 
 ## **Data Import**
@@ -98,9 +100,9 @@ We will remove dates when there was no```previous_day_admission_pediatric_covid_
 hhs_data <- hhs_data %>% filter(!date < '2020-07-31')
 ```
 
-**Sum by month**
+**Sum by week**
 
-Similar to the original HHS data release, we will sum by month. As described by the original data dictionary:
+Similar to the original HHS data release, we will sum by weeek As described by the original data dictionary:
 
 "For a given entry, the term ```collection_week``` signifies the start of the period that is aggregated. For example, a “collection_week” of 2020-11-20 means the average/sum/coverage of the elements captured from that given facility starting and including Friday, November 20, 2020, and ending and including reports for Thursday, November 26, 2020."
 
@@ -114,12 +116,6 @@ facility_level <- facility_level %>%
   mutate(collection_week = as.Date(collection_week)) %>%
   data.frame() %>%
   arrange(collection_week)
-
-# identify unique dates
-date_week_id <- facility_level %>% distinct(collection_week) %>% arrange(collection_week)
-date_week_id$date_id <- seq.int(nrow(date_week_id))
-date_week_id <- date_week_id %>%
-  rename("date" = collection_week)
 
 # function to bin all dates every 7 days
 all_dates <- hhs_data %>% distinct(date) %>% arrange(date)
@@ -683,18 +679,25 @@ rownames(cp_reg_results) <- c("Change Point Week", "P-value", "F-Stat")
 datatable(cp_reg_results)
 ```
 
-**Next, we will annotate plots with change points**
+**Annotate plots with change points**
+
+**Identify significance level based on number of analyses**
+
+We wil use bonferroni correction to adjust our p-value. We have 10 analyses, 2 for each region and then 2 for the national level analysis.
 
 ```{r}
-#remotes::install_github("mattcowgill/ggannotate")
-library(ggannotate) #ggannotate(plot) 
+sig_level = 0.05/10
 ```
 
 
 ```{r}
 cp_peds <- cp_nat_results %>% 
-  data.frame() %>%
-  select(National.Pediatric.Hospitalizations) %>% 
+  t() %>% 
+  data.frame() %>% 
+  tibble::rownames_to_column(., "Analysis") %>% 
+  filter(P.value < sig_level) %>% 
+  filter(Analysis == "National Pediatric Hospitalizations") %>% 
+  select(Change.Point.Week) %>% 
   slice(1L) %>%
   as.numeric()
 
@@ -704,10 +707,13 @@ cp_peds_xy <- hhs_data_proc %>%
   filter(date_id == cp_peds, 
          population == "pediatric")
 
-
 cp_adults <- cp_nat_results %>% 
-  data.frame() %>%
-  select(National.Adult.Hospitalizations) %>% 
+  t() %>% 
+  data.frame() %>% 
+  tibble::rownames_to_column(., "Analysis") %>% 
+  filter(P.value < sig_level) %>% 
+  filter(Analysis == "National Adult Hospitalizations") %>% 
+  select(Change.Point.Week) %>% 
   slice(1L) %>%
   as.numeric()
 
@@ -728,62 +734,140 @@ ggplot(hhs_data_proc %>%
   xlab("") + 
   scale_x_date(date_labels = "%b-%d", date_breaks = "1 month") + 
   scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalizations per 100K Children")) + 
-  geom_text(data = data.frame(x = cp_adults_xy$collection_week,
-                              y = cp_adults_xy$hospitalizations_standardized_us,
-                              label = "*"),
-            mapping = aes(x = x, y = y, label = label),
-            size = 12, hjust = 0.45, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE) + 
-  geom_text(data = data.frame(x = cp_peds_xy$collection_week,
-                              y = cp_peds_xy$hospitalizations_standardized_us*10, 
-                              label = "*"),
-            mapping = aes(x = x, y = y, label = label),
-            size = 12, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) + 
   theme_bw() + 
   theme(plot.title = element_text(""),
-        legend.title = element_text(face = "bold", size = 15),
-        legend.text = element_text(size=15),
+        legend.title = element_text(face = "bold", size = 19),
+        legend.text = element_text(size=19),
         legend.position = "top",
         legend.direction = "horizontal",
-        axis.text.x = element_text(face = "bold", size = 10),
-        axis.title.y = element_text(face = "bold", size = 13, color = "#1B9E77", margin=margin(0,10,0,0)),
-        axis.text.y.left = element_text(face = "bold",  size = 13, color = "#1B9E77"),
-        axis.title.y.right = element_text(face = "bold", size = 13, color='#D95F02', margin=margin(0,0,0,10)),
-        axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02'))
+        axis.text.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 17, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 17, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 17, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 17, color='#D95F02')) + 
+   geom_text(data = data.frame(x = cp_peds_xy$collection_week,
+                              y = cp_peds_xy$hospitalizations_standardized_us*10, 
+                              label = if_else(nrow(cp_peds_xy) != 0,"*", NULL)),
+            mapping = aes(x = x, y = y, label = label),
+            size = 16, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) +
+   geom_text(data = data.frame(x = cp_adults_xy$collection_week,
+                              y = cp_adults_xy$hospitalizations_standardized_us, 
+                              label = if_else(nrow(cp_adults_xy) != 0,"*", NULL)),
+            mapping = aes(x = x, y = y, label = label),
+            size = 16, hjust = 0.5, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE)
 ```
 
 ```{r}
 cp_peds <- cp_reg_results %>% 
-  data.frame() %>%
-  select(contains("Pediatric")) %>% 
-  slice(1L) %>%
-  t() 
-
-region_col <- data.frame(Region = c("Midwest", "South", "West", "Northeast"))
-
-cp_peds <- cbind(cp_peds, region_col)
-rownames(cp_peds) <- NULL
-
+  t() %>% 
+  data.frame() %>% 
+  tibble::rownames_to_column(., "Analysis") %>% 
+  filter(P.value < sig_level, 
+         grepl("Pediatric", Analysis)) %>% 
+  select(Analysis, Change.Point.Week) %>% 
+  mutate(Region = word(Analysis, 1))
 
 cp_adults <- cp_reg_results %>% 
-  data.frame() %>%
-  select(contains("Adult")) %>% 
-  slice(1L) %>%
-  t() 
-
-cp_adults <- cbind(cp_adults, region_col)
-rownames(cp_adults) <- NULL
+  t() %>% 
+  data.frame() %>% 
+  tibble::rownames_to_column(., "Analysis") %>% 
+  filter(P.value < sig_level, 
+         grepl("Adult", Analysis)) %>% 
+  select(Analysis, Change.Point.Week) %>% 
+  mutate(Region = word(Analysis, 1))
 
 cp_peds_xy <- hhs_data_proc %>% 
   data.frame() %>% 
   left_join(., cp_peds, by = "Region") %>% 
-  distinct(date_id, collection_week, hospitalizations_standardized_region, population, Region, `Change Point Week`)
+  distinct(date_id, collection_week, hospitalizations_standardized_region, population, Region, Change.Point.Week)
+
+# pediatric label indicators 
+cp_midwest_peds <- cp_peds_xy %>% 
+  filter(Region == "Midwest",
+         population == "pediatric",
+         date_id == Change.Point.Week)
+
+if(nrow(cp_midwest_peds) == 0){
+  
+  cp_midwest_peds[1,] <- NA
+} 
+
+cp_northeast_peds <- cp_peds_xy %>% 
+  filter(Region == "Northeast",
+         population == "pediatric",
+         date_id == Change.Point.Week)
+
+if(nrow(cp_northeast_peds) == 0){
+  
+  cp_northeast_peds[1,] <- NA
+} 
+
+cp_west_peds <- cp_peds_xy %>% 
+  filter(Region == "West",
+         population == "pediatric",
+         date_id == Change.Point.Week)
+
+if(nrow(cp_west_peds) == 0){
+  
+  cp_west_peds[1,] <- NA
+} 
+
+cp_south_peds <- cp_peds_xy %>% 
+  filter(Region == "South",
+         population == "pediatric",
+         date_id == Change.Point.Week)
+
+if(nrow(cp_south_peds) == 0){
+  
+  cp_south_peds[1,] <- NA
+}
+
 
 cp_adults_xy <- hhs_data_proc %>% 
   data.frame() %>% 
   left_join(., cp_adults, by = "Region") %>% 
-  distinct(date_id, collection_week, hospitalizations_standardized_region, population, Region, `Change Point Week`)
+  distinct(date_id, collection_week, hospitalizations_standardized_region, population, Region, Change.Point.Week)
 
+# adult label indicators
+cp_midwest_adult <- cp_adults_xy %>% 
+  filter(Region == "Midwest",
+         population == "adult",
+         date_id == Change.Point.Week)
 
+if(nrow(cp_midwest_adult) == 0){
+  
+  cp_midwest_adult[1,] <- NA
+} 
+
+cp_northeast_adult <- cp_adults_xy %>% 
+  filter(Region == "Northeast",
+         population == "adult",
+         date_id == Change.Point.Week)
+
+if(nrow(cp_northeast_adult) == 0){
+  
+  cp_northeast_adult[1,] <- NA
+} 
+
+cp_west_adult <- cp_adults_xy %>% 
+  filter(Region == "West",
+         population == "adult",
+         date_id == Change.Point.Week)
+
+if(nrow(cp_west_adult) == 0){
+  
+  cp_west_adult[1,] <- NA
+} 
+
+cp_south_adult <- cp_adults_xy %>% 
+  filter(Region == "South",
+         population == "adult",
+         date_id == Change.Point.Week)
+
+if(nrow(cp_south_adult) == 0){
+  
+  cp_south_adult[1,] <- NA
+}
 
 ggplot(hhs_data_proc %>%
          mutate(hospitalizations_standardized_region = if_else(population == "pediatric", 
@@ -792,117 +876,58 @@ ggplot(hhs_data_proc %>%
        aes(x = collection_week, y = hospitalizations_standardized_region, color = population)) + 
   geom_point() +
   geom_line(alpha=0.9) +
-  # midwest change point identifier
-  geom_text(data = data.frame(x = cp_adults_xy %>% 
-                                filter(Region == "Midwest" & population == "adult",
-                                       date_id == `Change Point Week`) %>% 
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_adults_xy %>% 
-                                filter(Region == "Midwest" & population == "adult",
-                                       date_id == `Change Point Week`) %>% select(hospitalizations_standardized_region) %>%
-                                rename('y' = hospitalizations_standardized_region), 
-                              label = "*", Region = "Midwest"),
+  # midwest labels
+  geom_text(data = data.frame(x = cp_midwest_adult$collection_week,
+                              y = cp_midwest_adult$hospitalizations_standardized_region, 
+                              label = if_else(nrow(cp_midwest_adult) != 0,"*", NULL),
+                              Region = "Midwest"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
-  geom_text(data = data.frame(x = cp_peds_xy %>% 
-                                filter(Region == "Midwest" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>% 
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_peds_xy %>% 
-                                filter(Region == "Midwest" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>%
-                                select(hospitalizations_standardized_region) %>%
-                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
-                                rename('y' = hospitalizations_standardized_region),
-                              label = "*", Region = "Midwest"),
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_midwest_peds$collection_week,
+                              y = cp_midwest_peds$hospitalizations_standardized_region*10, 
+                              label = if_else(nrow(cp_midwest_peds) != 0,"*", NULL),
+                              Region = "Midwest"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
-  # Northeast change point identifier
-  geom_text(data = data.frame(x = cp_adults_xy %>% 
-                                filter(Region == "Northeast" & population == "adult",
-                                       date_id == `Change Point Week`) %>% 
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_adults_xy %>% 
-                                filter(Region == "Northeast" & population == "adult",
-                                       date_id == `Change Point Week`) %>%
-                                select(hospitalizations_standardized_region) %>%
-                                rename('y' = hospitalizations_standardized_region), 
-                              label = "*", Region = "Northeast"),
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) + 
+  # northeast labels
+  geom_text(data = data.frame(x = cp_northeast_adult$collection_week,
+                              y = cp_northeast_adult$hospitalizations_standardized_region, 
+                              label = if_else(nrow(cp_northeast_adult) != 0,"*", NULL),
+                              Region = "Northeast"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
-  geom_text(data = data.frame(x = cp_peds_xy %>% 
-                                filter(Region == "Northeast" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>% 
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_peds_xy %>% 
-                                filter(Region == "Northeast" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>%
-                                select(hospitalizations_standardized_region) %>%
-                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
-                                rename('y' = hospitalizations_standardized_region),
-                              label = "*", Region = "Northeast"),
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_northeast_peds$collection_week,
+                              y = cp_northeast_peds$hospitalizations_standardized_region*10, 
+                              label = if_else(nrow(cp_northeast_peds) != 0,"*", NULL),
+                              Region = "Northeast"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
-  # South change point identifier
-  geom_text(data = data.frame(x = cp_adults_xy %>% 
-                                filter(Region == "South" & population == "adult",
-                                       date_id == `Change Point Week`) %>% 
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_adults_xy %>% 
-                                filter(Region == "South" & population == "adult",
-                                       date_id == `Change Point Week`) %>%
-                                select(hospitalizations_standardized_region) %>%
-                                rename('y' = hospitalizations_standardized_region), 
-                              label = "*", Region = "South"),
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) + 
+   # west labels
+  geom_text(data = data.frame(x = cp_west_adult$collection_week,
+                              y = cp_west_adult$hospitalizations_standardized_region, 
+                              label = if_else(nrow(cp_west_adult) != 0,"*", NULL),
+                              Region = "West"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
-  geom_text(data = data.frame(x = cp_peds_xy %>% 
-                                filter(Region == "South" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>% 
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_peds_xy %>% 
-                                filter(Region == "South" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>%
-                                select(hospitalizations_standardized_region) %>%
-                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
-                                rename('y' = hospitalizations_standardized_region),
-                              label = "*", Region = "South"),
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_west_peds$collection_week,
+                              y = cp_west_peds$hospitalizations_standardized_region*10, 
+                              label = if_else(nrow(cp_west_peds) != 0,"*", NULL),
+                              Region = "West"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) +
-  # West change point identifier
-  geom_text(data = data.frame(x = cp_adults_xy %>% 
-                                filter(Region == "West" & population == "adult",
-                                       date_id == `Change Point Week`) %>%
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_adults_xy %>% 
-                                filter(Region == "West" & population == "adult",
-                                       date_id == `Change Point Week`) %>%
-                                select(hospitalizations_standardized_region) %>%
-                                rename('y' = hospitalizations_standardized_region), 
-                              label = "*", Region = "West"),
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) + 
+  # south labels
+  geom_text(data = data.frame(x = cp_south_adult$collection_week,
+                              y = cp_south_adult$hospitalizations_standardized_region, 
+                              label = if_else(nrow(cp_south_adult) != 0,"*", NULL),
+                              Region = "South"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#1B9E77", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) + 
-  geom_text(data = data.frame(x = cp_peds_xy %>% 
-                                filter(Region == "West" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>% 
-                                select(collection_week) %>%
-                                rename('x' = collection_week),
-                              y = cp_peds_xy %>% 
-                                filter(Region == "West" & population == "pediatric",
-                                       date_id == `Change Point Week`) %>%
-                                select(hospitalizations_standardized_region) %>%
-                                mutate(hospitalizations_standardized_region = hospitalizations_standardized_region*10) %>%
-                                rename('y' = hospitalizations_standardized_region),
-                              label = "*", Region = "West"),
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE) + 
+  geom_text(data = data.frame(x = cp_south_peds$collection_week,
+                              y = cp_south_peds$hospitalizations_standardized_region*10, 
+                              label = if_else(nrow(cp_south_peds) != 0,"*", NULL),
+                              Region = "South"),
             mapping = aes(x = x, y = y, label = label),
-            colour = "#D95F02", size = 11, hjust = 0.5, vjust = 0.8, inherit.aes = FALSE) +
+            size = 13, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) + 
   scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
   ylab("Hospitalizations per 100k Adults") + 
   xlab("") + 
