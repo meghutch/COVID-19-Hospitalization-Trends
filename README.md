@@ -29,7 +29,10 @@ Vaccination data was aquired from the [CDC](https://covid.cdc.gov/covid-data-tra
 
 ```hhs_data <- read_csv('data/new_file_name_here.csv)```
 
-**Alternatively, one may choose to run Hospitalizations_Trends_Hospital_Level.Rmd to conduct a similar analysis on HHS [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u)[6]**
+**Optional Analyses to Explore Include:**
+
+* **Hospitalizations_Trends_Hospital_Level.Rmd**: Explore hospitalization trends with [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u)[6] 
+* **Hospitalization_Trends_Vacciniation.Rmd**: Explore preliminary vaccinination trends 
 
 ## **Analysis**
 
