@@ -1,6 +1,6 @@
 # COVID-19-Hospitalization-Trends
 
-**This repository contains the  code used to analyze United States National and Regional COVID-19 hospitalization trends in both children and adult populations.**
+**This repository contains the code used to analyze United States National and Regional COVID-19 hospitalization trends in both children and adult populations.**
 
 **[View Completed Analysis, Stats, and Figures](https://meghutch.github.io/Hospitalization_Trends.html)**
 
@@ -15,6 +15,8 @@ Data was acquired through the [United States Department of Health and Human Serv
 
 Hospitalization rates were standardized per 100,000 adults or children using the U.S Census Bureau's 2020 National and Regional population estimates[4]
 
+Vaccination data was aquired from the [CDC](https://covid.cdc.gov/covid-data-tracker/#vaccination-demographics-trends)[5]
+
 ## **To Run Notebook**
 
 **1. Clone this repo:**
@@ -27,11 +29,11 @@ Hospitalization rates were standardized per 100,000 adults or children using the
 
 ```hhs_data <- read_csv('data/new_file_name_here.csv)```
 
-**Alternatively, one may choose to run Hospitalizations_Trends_Hospital_Level.Rmd to conduct a similar analysis on HHS [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u)[5]**
+**Alternatively, one may choose to run Hospitalizations_Trends_Hospital_Level.Rmd to conduct a similar analysis on HHS [Hospital level data](https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u)[6]**
 
 ## **Analysis**
 
-The Analysis reports the median standardized hospitalization rates and plots figures of the trends. The change point analysis finds identifies the most likely time point for the shift in mean hospitalizations [6] (**R/change_point_function.R** written by **[Molei Liu](https://github.com/moleibobliu)**)
+The Analysis reports the median standardized hospitalization rates and plots figures of the trends. The change point analysis finds identifies the most likely time point for the shift in mean hospitalizations [7] (**R/change_point_function.R** written by **[Molei Liu](https://github.com/moleibobliu)**)
 
 ## References
 
@@ -43,9 +45,12 @@ The Analysis reports the median standardized hospitalization rates and plots fig
 
 4. SC-EST2020-18+POP-RES. U.S. Census Bureau, Population Division. 2020. Accessed February 9, 2020. https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/
 
-5. COVID-19 Reported Patient Impact and Hospital Capacity by Facility. HealthData Web site. Updated March 29, 2021. Accessed March 29, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u
+5. Prevention. Updated June 11, 2021. Accessed June 11, 2021. https://covid.cdc.gov/covid-data-tracker/#vaccination-demographics-trend
+![image](https://user-images.githubusercontent.com/42354910/122768953-b7ae8900-d269-11eb-9a7d-39fb1815eff3.png)
 
-6. Zhang, N. R., Siegmund, D. O., Ji, H., and Li, J. Z. Detecting simultaneous changepoints in multiple sequences. Biometrika. 2010;97(3):631–645. 
+6. COVID-19 Reported Patient Impact and Hospital Capacity by Facility. HealthData Web site. Updated March 29, 2021. Accessed March 29, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u
+
+7. Zhang, N. R., Siegmund, D. O., Ji, H., and Li, J. Z. Detecting simultaneous changepoints in multiple sequences. Biometrika. 2010;97(3):631–645. 
 
 Data is publicly available under the **Public Domain U.S. Government** [license](https://www.usa.gov/government-works)[1]
 
