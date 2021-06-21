@@ -48,8 +48,7 @@ The Analysis reports the median standardized hospitalization rates and plots fig
 
 4. SC-EST2020-18+POP-RES. U.S. Census Bureau, Population Division. 2020. Accessed February 9, 2020. https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/national/totals/
 
-5. Prevention. Updated June 11, 2021. Accessed June 11, 2021. https://covid.cdc.gov/covid-data-tracker/#vaccination-demographics-trend
-![image](https://user-images.githubusercontent.com/42354910/122768953-b7ae8900-d269-11eb-9a7d-39fb1815eff3.png)
+5. Demographic Trends of People Receiving COVID-19 Vaccinations in the United States. Center for Disease Control and Prevention. Updated June 11, 2021. Accessed June 11, 2021. https://covid.cdc.gov/covid-data-tracker/#vaccination-demographics-trend
 
 6. COVID-19 Reported Patient Impact and Hospital Capacity by Facility. HealthData Web site. Updated March 29, 2021. Accessed March 29, 2021. https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u
 
