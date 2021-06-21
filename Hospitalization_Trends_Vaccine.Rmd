@@ -11,12 +11,15 @@ Data was acquired through the [United States Department of Health and Human Serv
 
 [Helpful FAQ Resource](https://github.com/CareSet/COVID_Hospital_PUF?src=hd)
 
+Vaccination data was acquired through the [CDC](https://covid.cdc.gov/covid-data-tracker/#vaccination-demographics-trends)
+
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(ggplot2)
 library(formattable)
 library(data.table)
 library(DT)
+library(stringr)
 #remotes::install_github("mattcowgill/ggannotate")
 library(ggannotate) #ggannotate(plot) 
 ```
@@ -26,11 +29,13 @@ library(ggannotate) #ggannotate(plot)
 **Import HHS Hospitalization Counts and Census Data**
 
 ```{r message=FALSE, warning=FALSE}
-hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State_Timeseries_20210417.csv')
+hhs_data <- read_csv('data/COVID-19_Reported_Patient_Impact_and_Hospital_Capacity_by_State_Timeseries_20210607.csv')
 
 census_data <- read.csv('data/sc-est2020-18+pop-res.csv')
 
 state_abv <- read.delim2('data/state_abv.txt', sep = "|")
+
+load("processed_data/vaccine_age_table.rda")
 ```
 
 ## **Data Pre-Processing**
@@ -100,9 +105,9 @@ We will remove dates when there was no```previous_day_admission_pediatric_covid_
 hhs_data <- hhs_data %>% filter(!date < '2020-07-31')
 ```
 
-**Sum by week**
+**Sum by Week**
 
-Similar to the original HHS data release, we will sum by weeek As described by the original data dictionary:
+Similar to the original HHS data release, we will sum by week. As described by the original data dictionary:
 
 "For a given entry, the term ```collection_week``` signifies the start of the period that is aggregated. For example, a “collection_week” of 2020-11-20 means the average/sum/coverage of the elements captured from that given facility starting and including Friday, November 20, 2020, and ending and including reports for Thursday, November 26, 2020."
 
@@ -127,7 +132,7 @@ hhs_data <- hhs_data %>%
   group_by(date_id) %>% 
   mutate(collection_week = min(date)) %>%
   ungroup() %>%
-  filter(!collection_week >= "2021-04-16") # remove the latest week due to incomplete data collection at the initial time of running this script
+  filter(!collection_week >= "2021-06-04") # remove the latest week due to incomplete data collection at the initial time of running this script
 ```
 
 
@@ -153,7 +158,7 @@ hhs_data <- hhs_data %>%
 
 **Calculate Hospitalization Rates**
 
-First, we will straify into pediatric and adult datasets
+First, we will stratify into pediatric and adult datasets
 
 ```{r}
 hhs_pediatric_processed <- hhs_data %>%
@@ -296,7 +301,7 @@ ggplot(hhs_data_proc %>%
         axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02'))
 ```
 
-### **National Hospitalizations Rates**
+### **National Hospitalization Rates**
 
 Rates are expressed as per 100,000 adults or children
 
@@ -434,18 +439,49 @@ as.datatable(
   )
 ```
 
+## **National Vaccination Rates **
+
+```{r}
+ggplot(vaccine_age_table %>% 
+         distinct(week_id, total_pediatric_week_stan, total_adult_week_stan) %>% 
+         mutate(total_pediatric_week_stan = total_pediatric_week_stan*5) %>% 
+         pivot_longer(!week_id, names_to = "population", values_to = "counts"))  +
+       aes(x = week_id, y = counts, group = population, color = population) + 
+  geom_line() + 
+  geom_point() + 
+  ylab("Vaccinations per 100K Adults") + 
+  xlab("") + 
+  scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./5, name = "Vaccinations per 100k Children")) + 
+  theme_bw() +
+  theme(plot.title = element_text(""),
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size=15),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        axis.text.x = element_text(face = "bold", size = 10),
+        axis.title.y = element_text(face = "bold", size = 13, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 13, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 13, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02')) + 
+  theme(strip.text.x = element_text(size = 18))  
+```
+
 ## **Change Point Analysis**
 
 ```{r}
 source("R/change_point_function.R")
 ```
 
+Modify the dates of the HHS and vaccination dataframes
+
 ```{r}
-## modify the HHS datast
 date_week_id <- hhs_data_proc %>% distinct(collection_week) %>% arrange(collection_week)
 date_week_id$date_id <- seq.int(nrow(date_week_id))
 
 hhs_data_proc <- hhs_data_proc %>% left_join(., date_week_id, by = "collection_week")
+
+vaccine_age_table <- vaccine_age_table %>% left_join(., date_week_id, by = "collection_week")
 ```
 
 ### **National Hospitalizations Change Point **
@@ -453,6 +489,7 @@ hhs_data_proc <- hhs_data_proc %>% left_join(., date_week_id, by = "collection_w
 ```{r}
 set.seed(101)
 ```
+
 
 ```{r}
 ## adult hosps
@@ -601,6 +638,37 @@ cp_reg_west_ped <- change_point_test(west_ped_hosps_mat, w = rep(1 / nrow(west_p
                               t_range = 2:(ncol(west_ped_hosps_mat) - 2), boot_num = 10000)
 ```
 
+
+### **Vaccination Change Point **
+
+```{r}
+## adult vaccines
+adult_vaccine <- vaccine_age_table %>% 
+  select(collection_week, total_adult_week_stan) %>% 
+  arrange(collection_week) %>%
+  distinct(total_adult_week_stan)
+
+adult_vaccine_mat <- t(data.matrix(adult_vaccine))
+row.names(adult_vaccine_mat) <- NULL
+
+## peds vaccines
+peds_vaccine <- vaccine_age_table %>% 
+  select(collection_week, total_pediatric_week_stan) %>% 
+  arrange(collection_week) %>%
+  distinct(total_pediatric_week_stan)
+
+peds_vaccine_mat <- t(data.matrix(peds_vaccine))
+row.names(peds_vaccine_mat) <- NULL
+
+
+cp_nat_vac_adult <- change_point_test(adult_vaccine_mat, w = rep(1 / nrow(adult_vaccine_mat), nrow(adult_vaccine_mat)), 
+                              t_range = 2:(ncol(adult_vaccine_mat) - 2), boot_num = 10000)
+
+
+cp_nat_vac_ped <- change_point_test(peds_vaccine_mat, w = rep(1 / nrow(peds_vaccine_mat), nrow(peds_vaccine_mat)), 
+                              t_range = 2:(ncol(peds_vaccine_mat) - 2), boot_num = 10000)
+```
+
 ### **Change Point Results**
 
 **National Level**
@@ -678,16 +746,45 @@ rownames(cp_reg_results) <- c("Change Point Week", "P-value", "F-Stat")
 datatable(cp_reg_results)
 ```
 
+**Vaccines**
+
+Note: t.min is not at the same scale as hospitalization trends, since vaccination data began 12/18/2020
+
+```{r}
+cp_nat_vac_adult <- unlist(cp_nat_vac_adult) %>% 
+  data.frame()
+colnames(cp_nat_vac_adult)[1] <- "National Adult Vaccinations"
+
+cp_nat_vac_ped <- unlist(cp_nat_vac_ped) %>% 
+  data.frame()
+colnames(cp_nat_vac_ped)[1] <- "National Pediatric Vaccinations"
+
+cp_nat_vac_results <- cbind(cp_nat_vac_adult, cp_nat_vac_ped) %>% t() %>% data.frame()
+
+cp_nat_vac_results <- cp_nat_vac_results %>%
+  mutate(p.value = round(p.value,4),
+         stat = round(stat,1)) %>%
+  t()
+
+rownames(cp_nat_vac_results) <- c("Change Point Week", "P-value", "F-Stat")
+
+datatable(cp_nat_vac_results)
+```
+
 **Annotate plots with change points**
 
 **Identify significance level based on number of analyses**
 
-We wil use bonferroni correction to adjust our p-value. We have 10 analyses, 2 for each region and then 2 for the national level analysis.
+We wil use bonferroni correction to adjust our p-value. We have 12 analyses, 2 for each region, 2 for the national level analysis, and 2 for the vaccination analysis.
 
 ```{r}
-sig_level = 0.05/10
+sig_level = 0.05/12
 ```
 
+
+**National Hospitalization Change points**
+
+Note: Parameters to add vertical lines indicating vaccine change points (in progress!)
 
 ```{r}
 cp_peds <- cp_nat_results %>% 
@@ -706,6 +803,11 @@ cp_peds_xy <- hhs_data_proc %>%
   filter(date_id == cp_peds, 
          population == "pediatric")
 
+if(nrow(cp_peds_xy) == 0){
+  
+  cp_peds_xy[1,] <- NA
+} 
+
 cp_adults <- cp_nat_results %>% 
   t() %>% 
   data.frame() %>% 
@@ -722,6 +824,16 @@ cp_adults_xy <- hhs_data_proc %>%
   filter(date_id == cp_adults, 
          population == "adult")
 
+if(nrow(cp_adults_xy) == 0){
+  
+  cp_adults_xy[1,] <- NA
+} 
+
+# indicate vaccine change point dates
+#vertical.lines <- c(as.Date("2021-03-05"), as.Date("2021-04-30"))
+#vertical.lines.cols <- c("#1B9E77", "#D95F02")
+
+
 ggplot(hhs_data_proc %>% 
          mutate(hospitalizations_standardized_us = if_else(population == "pediatric", hospitalizations_standardized_us*10, hospitalizations_standardized_us)) %>% 
        distinct(collection_week, hospitalizations_standardized_us, population),
@@ -731,8 +843,9 @@ ggplot(hhs_data_proc %>%
   scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
   ylab("Hospitalizations per 100K Adults") + 
   xlab("") + 
-  scale_x_date(date_labels = "%b-%d", date_breaks = "1 month") + 
+  scale_x_date(date_labels = "%b", date_breaks = "1 month") + 
   scale_y_continuous(sec.axis = sec_axis(~ ./10, name = "Hospitalizations per 100K Children")) + 
+  #geom_vline(xintercept = as.numeric(vertical.lines), linetype = "dashed", color = vertical.lines.cols) +
   theme_bw() + 
   theme(plot.title = element_text(""),
         legend.title = element_text(face = "bold", size = 19),
@@ -743,18 +856,20 @@ ggplot(hhs_data_proc %>%
         axis.title.y = element_text(face = "bold", size = 17, color = "#1B9E77", margin=margin(0,10,0,0)),
         axis.text.y.left = element_text(face = "bold",  size = 17, color = "#1B9E77"),
         axis.title.y.right = element_text(face = "bold", size = 17, color='#D95F02', margin=margin(0,0,0,10)),
-        axis.text.y.right = element_text(face = "bold", size = 17, color='#D95F02')) + 
-   geom_text(data = data.frame(x = cp_peds_xy$collection_week,
+        axis.text.y.right = element_text(face = "bold", size = 17, color='#D95F02')) +
+     geom_text(data = data.frame(x = cp_peds_xy$collection_week,
                               y = cp_peds_xy$hospitalizations_standardized_us*10, 
                               label = if_else(nrow(cp_peds_xy) != 0,"*", NULL)),
             mapping = aes(x = x, y = y, label = label),
             size = 16, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) +
-   geom_text(data = data.frame(x = cp_adults_xy$collection_week,
+     geom_text(data = data.frame(x = cp_adults_xy$collection_week,
                               y = cp_adults_xy$hospitalizations_standardized_us, 
                               label = if_else(nrow(cp_adults_xy) != 0,"*", NULL)),
             mapping = aes(x = x, y = y, label = label),
             size = 16, hjust = 0.5, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE)
 ```
+
+**Regional Change points**
 
 ```{r}
 cp_peds <- cp_reg_results %>% 
@@ -945,5 +1060,82 @@ ggplot(hhs_data_proc %>%
         axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02')) + 
   facet_wrap(~Region, scales = "fixed") + 
   theme(strip.text.x = element_text(size = 18))  
+```
+
+**Vaccination Change points**
+
+```{r}
+cp_vac_peds <- cp_nat_vac_results %>% 
+  t() %>% 
+  data.frame() %>% 
+  tibble::rownames_to_column(., "Analysis") %>% 
+  filter(P.value < sig_level, 
+         grepl("Pediatric", Analysis)) %>% 
+  distinct(Change.Point.Week) %>% 
+  as.numeric()
+
+cp_vac_adults <- cp_nat_vac_results %>% 
+  t() %>% 
+  data.frame() %>% 
+  tibble::rownames_to_column(., "Analysis") %>% 
+  filter(P.value < sig_level, 
+         grepl("Adult", Analysis)) %>% 
+  distinct(Change.Point.Week) %>% 
+  as.numeric()
+
+cp_vac_peds_xy <- vaccine_age_table %>% 
+  data.frame() %>% 
+  distinct(week_id, collection_week, total_pediatric_week_stan) %>% 
+  filter(week_id == cp_vac_peds)
+
+if(nrow(cp_vac_peds_xy) == 0){
+  
+  cp_vac_peds_xy[1,] <- NA
+} 
+
+cp_vac_adults_xy <- vaccine_age_table %>% 
+  data.frame() %>% 
+  distinct(week_id, collection_week, total_adult_week_stan) %>% 
+  filter(week_id == cp_vac_adults)
+
+if(nrow(cp_vac_adults_xy) == 0){
+  
+  cp_vac_adults_xy[1,] <- NA
+} 
+
+
+ggplot(vaccine_age_table %>% 
+         distinct(collection_week, week_id, total_pediatric_week_stan, total_adult_week_stan) %>% 
+         mutate(total_pediatric_week_stan = total_pediatric_week_stan*5) %>% 
+         pivot_longer(!c(collection_week, week_id), names_to = "population", values_to = "counts"))  +
+       aes(x = collection_week, y = counts, group = population, color = population) + 
+  geom_line() + 
+  geom_point() + 
+  ylab("Vaccinations per 100K Adults") + 
+  xlab("") + 
+  scale_x_date(date_labels = "%b-%d", date_breaks = "1 month") + 
+  scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./5, name = "Vaccinations per 100k Children")) + 
+  theme_bw() + 
+  theme(plot.title = element_text(""),
+        legend.title = element_text(face = "bold", size = 19),
+        legend.text = element_text(size=19),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        axis.text.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 17, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 17, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 17, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 17, color='#D95F02')) + 
+  geom_text(data = data.frame(x = cp_vac_peds_xy$collection_week,
+                              y = cp_vac_peds_xy$total_pediatric_week_stan*5, 
+                              label = if_else(nrow(cp_vac_peds_xy) != 0,"*", NULL)),
+            mapping = aes(x = x, y = y, label = label),
+            size = 16, hjust = 0.5, vjust = 0.75, colour = "#D95F02", inherit.aes = FALSE) +
+     geom_text(data = data.frame(x = cp_vac_adults_xy$collection_week,
+                              y = cp_vac_adults_xy$total_adult_week_stan, 
+                              label = if_else(nrow(cp_vac_adults_xy) != 0,"*", NULL)),
+            mapping = aes(x = x, y = y, label = label),
+            size = 16, hjust = 0.5, vjust = 0.75, colour = "#1B9E77", inherit.aes = FALSE)
 ```
 
