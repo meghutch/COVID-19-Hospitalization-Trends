@@ -1,0 +1,154 @@
+---
+title: "Explore Vaccine Trends"
+author: "Meg Hutch"
+date: "6/11/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+```{r Import Vaccine Data}
+vaccine_demo_df <- read.csv("data/demographic_trends_of_people_receiving_covid19_vaccinations_in_the_united_states_20210611_clean.csv")
+
+census_data <- read.csv('data/sc-est2020-18+pop-res.csv')
+```
+
+**Clean US Census Data**
+
+Calculate new variable ```POPEST17uNDER2020``` for estimated population size of ages $\leq$ 17.
+
+```{r Format Census Data}
+census_data <- census_data %>% 
+  mutate(NAME = tolower(NAME)) %>%
+  rename('State' = NAME) %>% 
+  mutate(POPEST17Under2020 = POPESTIMATE2020 - POPEST18PLUS2020) %>%
+  rename('Region' = 'REGION')
+```
+
+```{r Format Date}
+colnames(vaccine_demo_df)[1] <- "Date"
+vaccine_demo_df$Date <- as.Date(vaccine_demo_df$Date, format="%m/%d/%Y")
+```
+
+```{r Select Age Columns}
+vaccine_demo_df <- vaccine_demo_df %>% 
+  filter(grepl("Ages", Demographic.Group))
+```
+
+Here we create new columns:
+
+* ```sum_pediatric```: Sum of all pediatric columns for each day (each row)
+* ```sum_adult```: Sum of all pediatric columns for each day (each row)
+* ```new_pediatric```: Number of new pediatric vaccines from the previous day
+* ```new_adult```: Number of new adult vaccines from the previous day
+
+```{r Pivot Vaccine-Age Table}
+vaccine_age_table <- vaccine_demo_df %>% 
+  arrange(Date) %>% 
+  select(Date, People.with.at.least.one.dose, Demographic.Group) %>% 
+  pivot_wider(id_cols = Date, 
+              names_from = Demographic.Group, 
+              values_from = People.with.at.least.one.dose) %>% 
+  mutate(sum_pediatric = rowSums(.[8:10]), 
+         sum_adult = rowSums(.[2:7]),
+         new_pediatric = sum_pediatric - lag(sum_pediatric),
+         new_adult = sum_adult - lag(sum_adult))
+```
+
+Create new variable ```week_id``` which groups dates into 7 day bins starting on Friday-Thursday as the HHS date bins do
+
+```{r Bin dates to weeks}
+vaccine_age_table$week_id <- 1+ as.numeric(vaccine_age_table$Date  - as.Date("2020-12-18")) %/% 7
+```
+
+Next we group_by week_id and create the following new columns:
+
+* ```new_pediatric_week```: sum of the new pediatric vaccines for that week
+* ```new_adult_week```: sum of the new adult vaccines for that week
+* ```total_pediatric_week```: the cumulative number of pediatric vaccines by the end of the week
+* ```total_adult_week```: the cumualtive number of adult vaccines by the end of the week
+
+```{r Sum counts by week_id}
+vaccine_age_table <- vaccine_age_table %>% 
+  group_by(week_id) %>% 
+  mutate(new_pediatric_week = sum(new_pediatric),
+         new_adult_week = sum(new_adult),
+         total_pediatric_week = last(sum_pediatric),
+         total_adult_week = last(sum_adult)) %>% 
+  ungroup()
+```
+
+Standardize counts/rates by US Census
+
+```{r Standarize by US Census}
+pop_adult_nation <- census_data %>% 
+  filter(State == "united states") %>% 
+  select(POPEST18PLUS2020) %>% 
+  as.numeric()
+
+pop_pediatric_nation <- census_data %>% 
+  filter(State == "united states") %>% 
+  select(POPEST17Under2020) %>% 
+  as.numeric()
+
+vaccine_age_table <- vaccine_age_table %>% 
+  mutate(new_pediatric_week_stan = new_pediatric_week/pop_pediatric_nation*100000,
+         total_pediatric_week_stan = total_pediatric_week/pop_pediatric_nation*100000,
+         new_adult_week_stan = new_adult_week/pop_adult_nation*100000,
+         total_adult_week_stan = total_adult_week/pop_adult_nation*100000)
+```
+
+Add collection week to harmonize format with HHS data
+
+```{r}
+vaccine_age_table <- vaccine_age_table %>% 
+  group_by(week_id) %>% 
+  mutate(collection_week = first(Date)) %>% 
+  filter(!collection_week == "2020-12-16") %>% 
+  ungroup()
+```
+
+Save processed vaccine and age data
+
+```{r}
+save(vaccine_age_table, file = "processed_data/vaccine_age_table.rda")
+```
+
+
+```{r Plot Total Vaccination Rates}
+ggplot(vaccine_age_table %>% 
+         distinct(week_id, total_pediatric_week_stan, total_adult_week_stan) %>% 
+         mutate(total_pediatric_week_stan = total_pediatric_week_stan*5) %>% 
+         pivot_longer(!week_id, names_to = "population", values_to = "counts"))  +
+       aes(x = week_id, y = counts, group = population, color = population) + 
+  geom_line() + 
+  geom_point() + 
+  ylab("Vaccinations per 100K Adults") + 
+  xlab("") + 
+  scale_color_brewer(palette="Dark2", labels = c("Adult", "Child"), name = "") + 
+  scale_y_continuous(sec.axis = sec_axis(~ ./5, name = "Vaccinations per 100k Children")) + 
+  theme_bw() + 
+  theme(plot.title = element_text(""),
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size=15),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        axis.text.x = element_text(face = "bold", size = 10),
+        axis.title.y = element_text(face = "bold", size = 13, color = "#1B9E77", margin=margin(0,10,0,0)),
+        axis.text.y.left = element_text(face = "bold",  size = 13, color = "#1B9E77"),
+        axis.title.y.right = element_text(face = "bold", size = 13, color='#D95F02', margin=margin(0,0,0,10)),
+        axis.text.y.right = element_text(face = "bold", size = 13, color='#D95F02')) + 
+  theme(strip.text.x = element_text(size = 18))  
+```
+
+
+
+
+
+
+
+
+
