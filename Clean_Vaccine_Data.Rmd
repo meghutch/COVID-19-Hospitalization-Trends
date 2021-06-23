@@ -38,6 +38,13 @@ vaccine_demo_df <- vaccine_demo_df %>%
   filter(grepl("Ages", Demographic.Group))
 ```
 
+For now, we will drop ages < 12 as of June 23, this has not been approved and I'm unsure where these numbers might be coming from (perhaps Clinical Trials but we can not be sure these are successful yet) 
+
+```{r}
+vaccine_demo_df <- vaccine_demo_df %>% 
+  filter(!Demographic.Group	== "Ages_<12yrs")
+```
+
 Here we create new columns:
 
 * ```sum_pediatric```: Sum of all pediatric columns for each day (each row)
@@ -48,11 +55,11 @@ Here we create new columns:
 ```{r Pivot Vaccine-Age Table}
 vaccine_age_table <- vaccine_demo_df %>% 
   arrange(Date) %>% 
-  select(Date, People.with.at.least.one.dose, Demographic.Group) %>% 
+  select(Date, People.who.are.fully.vaccinated, Demographic.Group) %>% 
   pivot_wider(id_cols = Date, 
               names_from = Demographic.Group, 
-              values_from = People.with.at.least.one.dose) %>% 
-  mutate(sum_pediatric = rowSums(.[8:10]), 
+              values_from = People.who.are.fully.vaccinated) %>% 
+  mutate(sum_pediatric = rowSums(.[8:9]), 
          sum_adult = rowSums(.[2:7]),
          new_pediatric = sum_pediatric - lag(sum_pediatric),
          new_adult = sum_adult - lag(sum_adult))

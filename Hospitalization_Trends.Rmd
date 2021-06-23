@@ -102,7 +102,7 @@ hhs_data <- hhs_data %>% filter(!date < '2020-07-31')
 
 **Sum by week**
 
-Similar to the original HHS data release, we will sum by weeek As described by the original data dictionary:
+Similar to the original HHS data release, we will sum by week As described by the original data dictionary:
 
 "For a given entry, the term ```collection_week``` signifies the start of the period that is aggregated. For example, a “collection_week” of 2020-11-20 means the average/sum/coverage of the elements captured from that given facility starting and including Friday, November 20, 2020, and ending and including reports for Thursday, November 26, 2020."
 
