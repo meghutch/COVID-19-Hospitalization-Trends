@@ -4,6 +4,10 @@
 
 **[View Completed Analysis, Stats, and Figures](https://meghutch.github.io/Hospitalization_Trends.html)**
 
+##
+
+### **In Progress:**
+
 **[View Our Interactive Dashboard using Hospital Level Data](https://meg-hutch.shinyapps.io/covid-19_hospitalization_dash/)** 
 ## About the Data
 
