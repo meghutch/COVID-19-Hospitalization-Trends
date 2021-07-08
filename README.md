@@ -36,7 +36,7 @@ Vaccination data was aquired from the [CDC](https://covid.cdc.gov/covid-data-tra
 
 ## **Analysis**
 
-The Analysis reports the median standardized hospitalization rates and plots figures of the trends. The change point analysis finds identifies the most likely time point for the shift in mean hospitalizations [7] (**R/change_point_function.R** written by **[Molei Liu](https://github.com/moleibobliu)**)
+The Analysis reports the median standardized hospitalization rates and plots figures of the trends. The change point analysis finds identifies the most likely time point for an upward shift in mean hospitalizations [7] (**R/change_point_function.R** written by **[Molei Liu](https://github.com/moleibobliu)**)
 
 ## References
 
